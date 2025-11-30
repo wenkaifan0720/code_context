@@ -31,6 +31,7 @@ class QueryExecutor {
       QueryAction.source => _getSource(query),
       QueryAction.find => _search(query),
       QueryAction.which => _which(query),
+      QueryAction.grep => _grep(query),
       QueryAction.files => _listFiles(),
       QueryAction.stats => _getStats(),
     };
@@ -358,7 +359,19 @@ class QueryExecutor {
   }
 
   Future<QueryResult> _search(ScipQuery query) async {
-    var results = index.findSymbols(query.target);
+    final pattern = query.parsedPattern;
+    Iterable<SymbolInfo> results;
+
+    // Use appropriate search method based on pattern type
+    if (pattern.type == PatternType.fuzzy) {
+      results = index.findSymbolsFuzzy(pattern.pattern);
+    } else {
+      // For regex, glob, and literal - use regex matching
+      final regex = pattern.toRegExp();
+      results = index.findSymbols(query.target).where((sym) {
+        return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
+      });
+    }
 
     // Apply kind filter
     final kind = query.kindFilter;
@@ -375,6 +388,37 @@ class QueryExecutor {
     }
 
     return SearchResult(results.toList());
+  }
+
+  /// Search in source code (like grep).
+  Future<QueryResult> _grep(ScipQuery query) async {
+    final pattern = query.parsedPattern;
+    final regex = pattern.toRegExp();
+    final contextLines = query.contextLines;
+    final pathFilter = query.pathFilter;
+
+    final matches = await index.grep(
+      regex,
+      pathFilter: pathFilter,
+      contextLines: contextLines,
+    );
+
+    final grepMatches = matches.map((m) {
+      return GrepMatch(
+        file: m.file,
+        line: m.line,
+        column: m.column,
+        matchText: m.matchText,
+        contextLines: m.contextLines,
+        contextBefore: m.contextBefore,
+        symbolContext: m.symbolContext,
+      );
+    }).toList();
+
+    return GrepResult(
+      pattern: query.target,
+      matches: grepMatches,
+    );
   }
 
   /// Show all matches for a symbol (disambiguation).

@@ -677,3 +677,101 @@ class SymbolReferences {
   final String? container;
 }
 
+/// Result of a grep search across source files.
+class GrepResult extends QueryResult {
+  const GrepResult({
+    required this.pattern,
+    required this.matches,
+  });
+
+  final String pattern;
+  final List<GrepMatch> matches;
+
+  @override
+  bool get isEmpty => matches.isEmpty;
+
+  @override
+  int get count => matches.length;
+
+  @override
+  String toText() {
+    if (matches.isEmpty) {
+      return 'No matches found for pattern "$pattern".';
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln('## Grep: $pattern (${matches.length} matches)');
+    buffer.writeln('');
+
+    // Group by file
+    final byFile = <String, List<GrepMatch>>{};
+    for (final match in matches) {
+      byFile.putIfAbsent(match.file, () => []).add(match);
+    }
+
+    for (final entry in byFile.entries) {
+      buffer.writeln('### ${entry.key} (${entry.value.length} matches)');
+      buffer.writeln('');
+
+      for (final match in entry.value) {
+        // Show context with line numbers (grep-style)
+        final lines = match.contextLines;
+        for (var i = 0; i < lines.length; i++) {
+          final lineNum = match.startLine - match.contextBefore + i + 1;
+          final isMatchLine =
+              i >= match.contextBefore &&
+              i < match.contextBefore + match.matchLineCount;
+          final prefix = isMatchLine ? '>' : ' ';
+          buffer.writeln('$prefix${lineNum.toString().padLeft(4)}| ${lines[i]}');
+        }
+        buffer.writeln('');
+      }
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'grep',
+        'pattern': pattern,
+        'count': matches.length,
+        'matches': matches
+            .map(
+              (m) => {
+                'file': m.file,
+                'line': m.line + 1,
+                'column': m.column + 1,
+                'matchText': m.matchText,
+                'context': m.contextLines.join('\n'),
+              },
+            )
+            .toList(),
+      };
+}
+
+/// A single grep match.
+class GrepMatch {
+  const GrepMatch({
+    required this.file,
+    required this.line,
+    required this.column,
+    required this.matchText,
+    required this.contextLines,
+    required this.contextBefore,
+    this.matchLineCount = 1,
+    this.symbolContext,
+  });
+
+  final String file;
+  final int line;
+  final int column;
+  final String matchText;
+  final List<String> contextLines;
+  final int contextBefore;
+  final int matchLineCount;
+  final String? symbolContext; // e.g., "in MyClass.myMethod"
+
+  int get startLine => line - contextBefore;
+}
+

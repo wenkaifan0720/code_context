@@ -287,6 +287,123 @@ class ScipIndex {
         'references': _referenceIndex.values.fold(0, (a, b) => a + b.length),
       };
 
+  /// Search for a pattern in source files.
+  ///
+  /// Returns matches with file, line, and context.
+  Future<List<GrepMatchData>> grep(
+    RegExp pattern, {
+    String? pathFilter,
+    int contextLines = 2,
+  }) async {
+    final results = <GrepMatchData>[];
+
+    for (final path in _documentIndex.keys) {
+      // Apply path filter
+      if (pathFilter != null && !path.startsWith(pathFilter)) continue;
+
+      final filePath = '$_projectRoot/$path';
+      final file = File(filePath);
+      if (!await file.exists()) continue;
+
+      final content = await file.readAsString();
+      final lines = content.split('\n');
+
+      // Find all matches
+      for (var lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        final line = lines[lineIdx];
+        final matches = pattern.allMatches(line);
+
+        for (final match in matches) {
+          // Get context lines
+          final startCtx = (lineIdx - contextLines).clamp(0, lines.length);
+          final endCtx = (lineIdx + contextLines + 1).clamp(0, lines.length);
+          final context = lines.sublist(startCtx, endCtx);
+
+          // Find containing symbol (optional enhancement)
+          String? symbolContext;
+          final fileSymbols = this.symbolsInFile(path).toList();
+          for (final sym in fileSymbols) {
+            final def = findDefinition(sym.symbol);
+            if (def != null &&
+                def.line <= lineIdx &&
+                (def.enclosingEndLine ?? def.line + 100) >= lineIdx) {
+              symbolContext = sym.name;
+              break;
+            }
+          }
+
+          results.add(
+            GrepMatchData(
+              file: path,
+              line: lineIdx,
+              column: match.start,
+              matchText: match.group(0) ?? '',
+              contextLines: context,
+              contextBefore: lineIdx - startCtx,
+              symbolContext: symbolContext,
+            ),
+          );
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /// Search for symbols using fuzzy matching.
+  Iterable<SymbolInfo> findSymbolsFuzzy(
+    String pattern, {
+    int maxDistance = 2,
+  }) {
+    final patternLower = pattern.toLowerCase();
+
+    return _symbolIndex.values.where((sym) {
+      final nameLower = sym.name.toLowerCase();
+
+      // Exact substring match
+      if (nameLower.contains(patternLower)) return true;
+
+      // Edit distance for short patterns
+      if (pattern.length <= 10) {
+        final distance = _levenshteinDistance(nameLower, patternLower);
+        return distance <= maxDistance;
+      }
+
+      return false;
+    });
+  }
+
+  /// Calculate Levenshtein edit distance.
+  static int _levenshteinDistance(String a, String b) {
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+
+    final matrix = List.generate(
+      a.length + 1,
+      (i) => List.generate(b.length + 1, (j) => 0),
+    );
+
+    for (var i = 0; i <= a.length; i++) {
+      matrix[i][0] = i;
+    }
+    for (var j = 0; j <= b.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (var i = 1; i <= a.length; i++) {
+      for (var j = 1; j <= b.length; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        matrix[i][j] = [
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        ].reduce((x, y) => x < y ? x : y);
+      }
+    }
+
+    return matrix[a.length][b.length];
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // QUALIFIED NAME LOOKUPS
   // ═══════════════════════════════════════════════════════════════════════
@@ -556,5 +673,26 @@ class OccurrenceInfo {
   @override
   String toString() =>
       'OccurrenceInfo($location, ${isDefinition ? "def" : "ref"})';
+}
+
+/// Data for a grep match (used internally).
+class GrepMatchData {
+  const GrepMatchData({
+    required this.file,
+    required this.line,
+    required this.column,
+    required this.matchText,
+    required this.contextLines,
+    required this.contextBefore,
+    this.symbolContext,
+  });
+
+  final String file;
+  final int line;
+  final int column;
+  final String matchText;
+  final List<String> contextLines;
+  final int contextBefore;
+  final String? symbolContext;
 }
 

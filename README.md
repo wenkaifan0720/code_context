@@ -101,6 +101,7 @@ dart_context --no-cache stats
 | `source <symbol>` | Get source code for a symbol |
 | `find <pattern>` | Search for symbols matching pattern |
 | `which <symbol>` | Show all matches (for disambiguation) |
+| `grep <pattern>` | Search in source code (like grep) |
 | `files` | List all indexed files |
 | `stats` | Get index statistics |
 
@@ -121,12 +122,24 @@ which login
 # 3. LoginPage [class] (lib/ui/login_page.dart)
 ```
 
-### Filters (for `find`)
+### Pattern Syntax
+
+| Pattern | Type | Description |
+|---------|------|-------------|
+| `Auth*` | Glob | Wildcard matching (* = any chars, ? = one char) |
+| `/TODO\|FIXME/` | Regex | Regular expression (between slashes) |
+| `/error/i` | Regex | Case-insensitive regex (with `i` flag) |
+| `~authentcate` | Fuzzy | Typo-tolerant matching (finds "authenticate") |
+| `login` | Literal | Exact match |
+
+### Filters (for `find` and `grep`)
 
 | Filter | Description |
 |--------|-------------|
 | `kind:<kind>` | Filter by symbol kind (class, method, function, field, etc.) |
 | `in:<path>` | Filter by file path prefix |
+| `-i` | Case insensitive (for grep) |
+| `-C:n` | Context lines around match (for grep, default: 2) |
 
 ### Examples
 
@@ -146,6 +159,18 @@ hierarchy MyWidget
 # Disambiguation workflow
 which handleSubmit         # See all matches
 refs FormWidget.handleSubmit  # Get refs for specific one
+
+# Grep for patterns in source code
+grep /TODO|FIXME/          # Find TODOs and FIXMEs
+grep /throw.*Exception/    # Find exception throws
+grep error in:lib/         # Find "error" in lib/
+
+# Fuzzy matching (typo-tolerant)
+find ~authentcate          # Finds "authenticate" despite typo
+find ~respnse              # Finds "response"
+
+# Case-insensitive search
+grep /error/i              # Matches "Error", "ERROR", "error"
 ```
 
 ## Architecture

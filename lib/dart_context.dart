@@ -49,8 +49,10 @@ export 'src/adapters/hologram_adapter.dart';
 export 'src/dart_context.dart';
 export 'src/index/incremental_indexer.dart'
     show IncrementalScipIndexer, IndexUpdate;
-export 'src/index/scip_index.dart' show ScipIndex, SymbolInfo, OccurrenceInfo;
+export 'src/index/scip_index.dart'
+    show ScipIndex, SymbolInfo, OccurrenceInfo, GrepMatchData;
 export 'src/query/query_executor.dart' show QueryExecutor;
-export 'src/query/query_parser.dart' show ScipQuery;
+export 'src/query/query_parser.dart'
+    show ScipQuery, ParsedPattern, PatternType;
 export 'src/query/query_result.dart';
 
