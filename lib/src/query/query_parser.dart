@@ -83,8 +83,21 @@ class ScipQuery {
     for (var i = 1; i < tokens.length; i++) {
       final token = tokens[i];
 
-      if (token.contains(':')) {
-        // It's a filter
+      // Handle grep-style flags like -i, -C:5, -A:3
+      if (token.startsWith('-') && token.length >= 2) {
+        final flagPart = token.substring(1);
+        if (flagPart.contains(':')) {
+          // Flag with value: -C:5
+          final colonIndex = flagPart.indexOf(':');
+          final key = flagPart.substring(0, colonIndex);
+          final value = flagPart.substring(colonIndex + 1);
+          filters[key] = value;
+        } else {
+          // Boolean flag: -i
+          filters[flagPart] = 'true';
+        }
+      } else if (token.contains(':')) {
+        // It's a filter (key:value)
         final colonIndex = token.indexOf(':');
         final key = token.substring(0, colonIndex);
         final value = token.substring(colonIndex + 1);
@@ -297,7 +310,8 @@ class ParsedPattern {
   final bool caseSensitive;
 
   /// Parse a pattern string into structured form.
-  factory ParsedPattern.parse(String input, {bool defaultCaseSensitive = true}) {
+  factory ParsedPattern.parse(String input,
+      {bool defaultCaseSensitive = true}) {
     var caseSensitive = defaultCaseSensitive;
 
     // Check for regex pattern: /pattern/ or /pattern/i
@@ -358,11 +372,38 @@ class ParsedPattern {
   }
 
   /// Convert glob pattern to regex.
+  ///
+  /// Converts glob wildcards to regex equivalents:
+  /// - `*` becomes `.*` (zero or more characters)
+  /// - `?` becomes `.` (exactly one character)
   static String _globToRegex(String glob) {
-    return glob
-        .replaceAll('.', r'\.')
-        .replaceAll('*', '.*')
-        .replaceAll('?', '.');
+    final escaped = StringBuffer();
+    for (var i = 0; i < glob.length; i++) {
+      final char = glob[i];
+      switch (char) {
+        case '*':
+          escaped.write('.*');
+        case '?':
+          escaped.write('.');
+        case '.':
+        case '+':
+        case '^':
+        case r'$':
+        case '(':
+        case ')':
+        case '[':
+        case ']':
+        case '{':
+        case '}':
+        case '|':
+        case r'\':
+          escaped.write(r'\');
+          escaped.write(char);
+        default:
+          escaped.write(char);
+      }
+    }
+    return escaped.toString();
   }
 
   /// Convert fuzzy pattern to regex that tolerates typos.
@@ -414,7 +455,7 @@ class ParsedPattern {
 
     // Check edit distance for short strings
     if (pattern.length <= 10) {
-      final distance = _levenshteinDistance(textLower, patternLower);
+      final distance = levenshteinDistance(textLower, patternLower);
       return distance <= maxDistance;
     }
 
@@ -426,8 +467,11 @@ class ParsedPattern {
     return matchCount >= pattern.length * 0.7;
   }
 
-  /// Calculate Levenshtein edit distance.
-  static int _levenshteinDistance(String a, String b) {
+  /// Calculate Levenshtein edit distance between two strings.
+  ///
+  /// Returns the minimum number of single-character edits (insertions,
+  /// deletions, or substitutions) required to change one string into the other.
+  static int levenshteinDistance(String a, String b) {
     if (a.isEmpty) return b.length;
     if (b.isEmpty) return a.length;
 
@@ -457,4 +501,3 @@ class ParsedPattern {
     return matrix[a.length][b.length];
   }
 }
-

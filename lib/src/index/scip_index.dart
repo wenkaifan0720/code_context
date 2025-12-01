@@ -274,6 +274,9 @@ class ScipIndex {
   /// Get all files in the index.
   Iterable<String> get files => _documentIndex.keys;
 
+  /// Get all symbols in the index.
+  Iterable<SymbolInfo> get allSymbols => _symbolIndex.values;
+
   /// Get a document by path.
   scip.Document? getDocument(String path) => _documentIndex[path];
 

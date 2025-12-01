@@ -297,6 +297,71 @@ void main() {
         expect(statsResult.stats['symbols'], 5);
       });
     });
+
+    group('fuzzy find', () {
+      test('finds symbols with typos', () async {
+        // Note: fuzzy matching uses Levenshtein distance on the symbol name
+        final result = await executor.execute('find ~AuthRepo');
+        expect(result, isA<SearchResult>());
+
+        final searchResult = result as SearchResult;
+        expect(searchResult.symbols, isNotEmpty);
+        expect(
+          searchResult.symbols.any((s) => s.name == 'AuthRepository'),
+          isTrue,
+        );
+      });
+
+      test('finds symbols with missing characters', () async {
+        final result = await executor.execute('find ~AuthServ');
+        expect(result, isA<SearchResult>());
+
+        final searchResult = result as SearchResult;
+        expect(searchResult.symbols, isNotEmpty);
+        expect(
+          searchResult.symbols.any((s) => s.name == 'AuthService'),
+          isTrue,
+        );
+      });
+
+      test('finds symbols with exact substring', () async {
+        final result = await executor.execute('find ~format');
+        expect(result, isA<SearchResult>());
+
+        final searchResult = result as SearchResult;
+        expect(searchResult.symbols, isNotEmpty);
+        expect(
+          searchResult.symbols.any((s) => s.name == 'formatDate'),
+          isTrue,
+        );
+      });
+    });
+
+    group('regex find', () {
+      test('finds symbols with regex pattern', () async {
+        // /^Auth/ matches symbols whose name starts with "Auth"
+        final result = await executor.execute('find /^Auth/');
+        expect(result, isA<SearchResult>());
+
+        final searchResult = result as SearchResult;
+        // Only AuthRepository and AuthService start with "Auth"
+        expect(searchResult.symbols, hasLength(2));
+        expect(
+          searchResult.symbols.every((s) => s.name.startsWith('Auth')),
+          isTrue,
+        );
+      });
+
+      test('finds symbols with case insensitive regex', () async {
+        // /auth/i with kind:class filters to only classes with "auth" in name
+        final result = await executor.execute('find /auth/i kind:class');
+        expect(result, isA<SearchResult>());
+
+        final searchResult = result as SearchResult;
+        // Should find AuthRepository and AuthService classes
+        expect(searchResult.symbols, hasLength(2));
+      });
+    });
   });
 }
 

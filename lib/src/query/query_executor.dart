@@ -364,12 +364,22 @@ class QueryExecutor {
 
     // Use appropriate search method based on pattern type
     if (pattern.type == PatternType.fuzzy) {
+      // Fuzzy uses edit distance matching
       results = index.findSymbolsFuzzy(pattern.pattern);
-    } else {
-      // For regex, glob, and literal - use regex matching
+    } else if (pattern.type == PatternType.regex) {
+      // Regex searches all symbols
       final regex = pattern.toRegExp();
-      results = index.findSymbols(query.target).where((sym) {
+      results = index.allSymbols.where((sym) {
         return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
+      });
+    } else if (pattern.type == PatternType.glob) {
+      // Glob uses the existing findSymbols
+      results = index.findSymbols(query.target);
+    } else {
+      // Literal - exact match on name
+      final regex = pattern.toRegExp();
+      results = index.allSymbols.where((sym) {
+        return regex.hasMatch(sym.name);
       });
     }
 
