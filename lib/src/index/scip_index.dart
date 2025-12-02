@@ -10,6 +10,29 @@ import 'package:scip_dart/src/gen/scip.pb.dart' as scip;
 /// - Symbol definitions and references
 /// - Class members and hierarchy
 /// - File-to-symbol mappings
+/// - Call graph (calls/callers)
+///
+/// ## Usage
+///
+/// ```dart
+/// // Load from SCIP file
+/// final index = await ScipIndex.loadFromFile('index.scip', projectRoot: '/my/project');
+///
+/// // Or build from SCIP protobuf
+/// final index = ScipIndex.fromScipIndex(scipData, projectRoot: '/my/project');
+///
+/// // Query symbols
+/// final symbols = index.findSymbols('MyClass');
+/// final refs = index.findReferences(symbols.first.symbol);
+/// final members = index.membersOf(symbols.first.symbol);
+/// ```
+///
+/// ## Symbol IDs
+///
+/// Symbols are identified by SCIP-format strings like:
+/// `dart pub mypackage 1.0.0 lib/src/my_class.dart/MyClass#login().`
+///
+/// Use [findSymbols] to search by name, which handles the full ID internally.
 class ScipIndex {
   ScipIndex._({
     required Map<String, SymbolInfo> symbolIndex,

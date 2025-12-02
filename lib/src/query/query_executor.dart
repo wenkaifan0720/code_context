@@ -7,7 +7,45 @@ import '../index/scip_index.dart';
 import 'query_parser.dart';
 import 'query_result.dart';
 
-/// Executes queries against a ScipIndex.
+/// Executes DSL queries against a ScipIndex.
+///
+/// The executor parses query strings and returns structured [QueryResult] objects.
+///
+/// ## Usage
+///
+/// ```dart
+/// final executor = QueryExecutor(index);
+///
+/// // Execute string queries
+/// final result = await executor.execute('def MyClass');
+/// print(result.toText());
+///
+/// // Execute parsed queries
+/// final query = ScipQuery.parse('refs login kind:method');
+/// final result = await executor.executeQuery(query);
+/// print(result.toJson());
+/// ```
+///
+/// ## Pipe Queries
+///
+/// Queries can be chained with `|` to pass results between stages:
+///
+/// ```dart
+/// // Find all Auth classes, then get their members
+/// final result = await executor.execute('find Auth* kind:class | members');
+/// ```
+///
+/// ## Error Handling
+///
+/// Invalid queries return [ErrorResult], not found symbols return [NotFoundResult].
+/// Always check `result.isEmpty` or use pattern matching:
+///
+/// ```dart
+/// final result = await executor.execute('def NonExistent');
+/// if (result is NotFoundResult) {
+///   print('Symbol not found');
+/// }
+/// ```
 class QueryExecutor {
   QueryExecutor(this.index);
 

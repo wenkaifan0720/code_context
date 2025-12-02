@@ -1,23 +1,67 @@
 import '../index/scip_index.dart';
 
 /// Result of a query execution.
+///
+/// All query results implement [toText] for human/LLM-readable output
+/// and [toJson] for structured programmatic access.
+///
+/// Result types:
+/// - [DefinitionResult] - Symbol definitions (`def`)
+/// - [ReferencesResult] - Symbol references (`refs`)
+/// - [MembersResult] - Class/mixin members (`members`)
+/// - [SearchResult] - Symbol search matches (`find`)
+/// - [SourceResult] - Source code (`source`)
+/// - [HierarchyResult] - Type hierarchy (`hierarchy`, `supertypes`, `subtypes`)
+/// - [WhichResult] - Disambiguation matches (`which`)
+/// - [GrepResult] - Source code search (`grep`)
+/// - [CallGraphResult] - Call relationships (`calls`, `callers`)
+/// - [ImportsResult] - Import/export analysis (`imports`, `exports`)
+/// - [DependenciesResult] - Symbol dependencies (`deps`)
+/// - [FilesResult] - Indexed files (`files`)
+/// - [StatsResult] - Index statistics (`stats`)
+/// - [PipelineResult] - Aggregated pipe query results
+/// - [NotFoundResult] - No matches found
+/// - [ErrorResult] - Query error
 sealed class QueryResult {
   const QueryResult();
 
-  /// Convert to human/LLM readable text.
+  /// Convert to human/LLM readable text format.
+  ///
+  /// Output uses Markdown formatting with headers, lists, and code blocks
+  /// for optimal display in terminals and LLM interfaces.
   String toText();
 
-  /// Convert to structured JSON.
+  /// Convert to structured JSON for programmatic access.
+  ///
+  /// All results include a `type` field indicating the result kind,
+  /// and a `count` field with the number of matches.
   Map<String, dynamic> toJson();
 
   /// Whether the query found any results.
   bool get isEmpty;
 
-  /// Number of results.
+  /// Number of results (0 for errors/not found).
   int get count;
 }
 
-/// Result containing symbol definitions.
+/// Result containing symbol definitions from `def` queries.
+///
+/// Each definition includes:
+/// - Symbol metadata (name, kind, documentation)
+/// - File location (path, line, column)
+/// - Source code snippet (when available)
+///
+/// Example output:
+/// ```
+/// ## MyClass (class)
+/// File: lib/my_class.dart:5
+///
+/// A description of MyClass.
+///
+/// ```dart
+/// class MyClass { ... }
+/// ```
+/// ```
 class DefinitionResult extends QueryResult {
   const DefinitionResult(this.definitions);
 
@@ -87,7 +131,23 @@ class DefinitionMatch {
   final String? source;
 }
 
-/// Result containing references.
+/// Result containing references from `refs` queries.
+///
+/// References are grouped by file and include:
+/// - File path
+/// - Line and column numbers
+/// - Context snippet showing the reference
+///
+/// Example output:
+/// ```
+/// ## References to login (5)
+///
+/// ### lib/auth/service.dart
+/// - Line 42
+///   ```dart
+///   await login(credentials);
+///   ```
+/// ```
 class ReferencesResult extends QueryResult {
   const ReferencesResult({
     required this.symbol,
@@ -913,6 +973,24 @@ class PipelineResult extends QueryResult {
 }
 
 /// Result of a grep search across source files.
+///
+/// Matches are grouped by file and include:
+/// - Line number and column
+/// - Matching text
+/// - Context lines (configurable via `-C:n`)
+///
+/// Output format mimics classic grep with line numbers:
+/// ```
+/// ## Grep: TODO (3 matches)
+///
+/// ### lib/service.dart (2 matches)
+///
+/// >  42| // TODO: Implement caching
+///    43| final cache = <String, Object>{};
+///
+/// >  87| // TODO: Add error handling
+///    88| throw UnimplementedError();
+/// ```
 class GrepResult extends QueryResult {
   const GrepResult({
     required this.pattern,
