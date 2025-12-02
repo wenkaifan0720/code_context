@@ -492,8 +492,9 @@ class HierarchyResult extends QueryResult {
         'type': 'hierarchy',
         'symbol': symbol.symbol,
         'name': symbol.name,
-        'supertypes':
-            supertypes.map((s) => {'symbol': s.symbol, 'name': s.name}).toList(),
+        'supertypes': supertypes
+            .map((s) => {'symbol': s.symbol, 'name': s.name})
+            .toList(),
         'subtypes':
             subtypes.map((s) => {'symbol': s.symbol, 'name': s.name}).toList(),
       };
@@ -646,8 +647,9 @@ class WhichResult extends QueryResult {
       final m = matches[i];
       final location = m.location ?? 'external';
       final container = m.container;
-      final qualifiedHint = container != null ? '$container.${m.symbol.name}' : m.symbol.name;
-      
+      final qualifiedHint =
+          container != null ? '$container.${m.symbol.name}' : m.symbol.name;
+
       buffer.writeln('${i + 1}. **${m.symbol.name}** [${m.symbol.kindString}]');
       buffer.writeln('   File: $location');
       if (container != null) {
@@ -718,12 +720,14 @@ class AggregatedReferencesResult extends QueryResult {
     }
 
     final buffer = StringBuffer();
-    buffer.writeln('## References to "$query" (${symbolRefs.length} symbols, $count total refs)');
+    buffer.writeln(
+        '## References to "$query" (${symbolRefs.length} symbols, $count total refs)');
     buffer.writeln('');
 
     for (final sr in symbolRefs) {
       final container = sr.container != null ? '${sr.container}.' : '';
-      buffer.writeln('### $container${sr.symbol.name} [${sr.symbol.kindString}] (${sr.references.length} refs)');
+      buffer.writeln(
+          '### $container${sr.symbol.name} [${sr.symbol.kindString}] (${sr.references.length} refs)');
       if (sr.symbol.file != null) {
         buffer.writeln('Defined in: ${sr.symbol.file}');
       }
@@ -939,7 +943,8 @@ class DependenciesResult extends QueryResult {
     }
 
     final buffer = StringBuffer();
-    buffer.writeln('## Dependencies of ${symbol.name} (${dependencies.length})');
+    buffer
+        .writeln('## Dependencies of ${symbol.name} (${dependencies.length})');
     buffer.writeln('');
 
     // Group by kind
@@ -1084,11 +1089,11 @@ class GrepResult extends QueryResult {
         final lines = match.contextLines;
         for (var i = 0; i < lines.length; i++) {
           final lineNum = match.startLine - match.contextBefore + i + 1;
-          final isMatchLine =
-              i >= match.contextBefore &&
+          final isMatchLine = i >= match.contextBefore &&
               i < match.contextBefore + match.matchLineCount;
           final prefix = isMatchLine ? '>' : ' ';
-          buffer.writeln('$prefix${lineNum.toString().padLeft(4)}| ${lines[i]}');
+          buffer
+              .writeln('$prefix${lineNum.toString().padLeft(4)}| ${lines[i]}');
         }
         buffer.writeln('');
       }
@@ -1140,4 +1145,3 @@ class GrepMatch {
 
   int get startLine => line - contextBefore;
 }
-

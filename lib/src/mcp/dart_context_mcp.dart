@@ -196,42 +196,69 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     name: 'dart_query',
     description: '''Query Dart codebase for semantic information using a simple DSL.
 
-## Query DSL
+## Query Commands
 
 | Query | Description | Example |
 |-------|-------------|---------|
-| `def <symbol>` | Find definition of a symbol | `def AuthRepository` |
-| `refs <symbol>` | Find all references to a symbol | `refs login` |
-| `members <symbol>` | Get members of a class/mixin | `members UserService` |
-| `impls <symbol>` | Find implementations of interface | `impls Repository` |
-| `hierarchy <symbol>` | Get type hierarchy (super + sub) | `hierarchy MyWidget` |
-| `source <symbol>` | Get full source code | `source handleLogin` |
-| `find <pattern>` | Search symbols with wildcards | `find Auth*` |
-| `files` | List all indexed files | `files` |
-| `stats` | Get index statistics | `stats` |
+| `def <symbol>` | Find definition | `def AuthRepository` |
+| `refs <symbol>` | Find all references | `refs login` |
+| `sig <symbol>` | Get signature (no body) | `sig UserService` |
+| `members <symbol>` | Get class members | `members UserService` |
+| `impls <symbol>` | Find implementations | `impls Repository` |
+| `hierarchy <symbol>` | Type hierarchy | `hierarchy MyWidget` |
+| `source <symbol>` | Full source code | `source handleLogin` |
+| `find <pattern>` | Search symbols | `find Auth*` |
+| `which <symbol>` | Disambiguate matches | `which login` |
+| `grep <pattern>` | Search in source | `grep /TODO\|FIXME/` |
+| `calls <symbol>` | What does it call? | `calls AuthService.login` |
+| `callers <symbol>` | What calls it? | `callers validateUser` |
+| `imports <file>` | File imports | `imports lib/auth.dart` |
+| `exports <path>` | Directory exports | `exports lib/` |
+| `deps <symbol>` | Dependencies | `deps AuthService` |
+| `files` | List indexed files | `files` |
+| `stats` | Index statistics | `stats` |
 
-## Filters (for `find` queries)
+## Pattern Syntax
+
+| Pattern | Type | Example |
+|---------|------|---------|
+| `Auth*` | Glob | Wildcard matching |
+| `/TODO\|FIXME/` | Regex | Regular expression |
+| `/error/i` | Regex | Case-insensitive |
+| `~authentcate` | Fuzzy | Typo-tolerant |
+| `Class.method` | Qualified | Disambiguate |
+
+## Filters
 
 | Filter | Description | Example |
 |--------|-------------|---------|
-| `kind:<type>` | Filter by symbol kind | `find * kind:class` |
-| `in:<path>` | Filter by file path | `find * in:lib/auth/` |
+| `kind:<type>` | Symbol kind | `find * kind:class` |
+| `in:<path>` | File path | `find * in:lib/auth/` |
+| `-i` | Case insensitive | `grep error -i` |
+| `-C:n` | Context lines | `grep TODO -C:3` |
 
-Symbol kinds: class, method, function, field, enum, mixin, extension, getter, setter, constructor
+Kinds: class, method, function, field, enum, mixin, extension, getter, setter, constructor
+
+## Pipe Queries
+
+Chain queries with `|` to process results:
+- `find Auth* kind:class | members` - Get members of all Auth classes
+- `find *Service | refs` - Find refs for all services
+- `grep TODO | refs` - Find refs for symbols containing TODOs
 
 ## Examples
 
 ```
-def AuthRepository          # Find where AuthRepository is defined
-refs login                  # Find all usages of 'login'
-find Auth* kind:class       # Find all classes starting with 'Auth'
-find * kind:method in:lib/  # Find all methods in lib/
-members UserService         # List all members of UserService
-hierarchy StatefulWidget    # Show inheritance tree
-source validateEmail        # Get full source code
+def AuthRepository              # Definition with source
+refs AuthService.login          # References to specific method
+sig UserService                 # Class signature (methods as {})
+find ~authentcate               # Fuzzy search (finds "authenticate")
+grep /throw.*Exception/         # Find exception throws
+which login                     # Show all "login" matches
+find Auth* kind:class | members # Pipe: classes → their members
 ```
 
-Works like grep but for semantic code navigation - understands definitions, references, types, and relationships.''',
+Semantic code navigation - understands definitions, references, types, call graphs, and relationships.''',
     annotations: ToolAnnotations(
       title: 'Dart Code Query',
       readOnlyHint: true,

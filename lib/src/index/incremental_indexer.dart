@@ -643,7 +643,8 @@ class IncrementalScipIndexer {
       final nodeEnd = lineInfo.getLocation(node.end);
 
       // Check if the target location is within this node
-      if ((nodeStart.lineNumber - 1 <= line && line <= nodeEnd.lineNumber - 1)) {
+      if ((nodeStart.lineNumber - 1 <= line &&
+          line <= nodeEnd.lineNumber - 1)) {
         result = node;
         // Continue to find more specific child nodes
         for (final child in node.childEntities) {
