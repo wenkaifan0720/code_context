@@ -113,15 +113,20 @@ class QueryExecutor {
 
     // Parse the next action
     final tokens = queryPart.split(' ');
-    final action = tokens.first.toLowerCase();
+    final actionStr = tokens.first.toLowerCase();
+    
+    // Parse action
+    final action = _parseAction(actionStr);
+    if (action == null) {
+      return ErrorResult('Unknown action in pipe: $actionStr');
+    }
 
-    // Execute action for each symbol
+    // Execute action directly for each symbol (no re-parsing)
     final results = <QueryResult>[];
     for (final sym in symbols) {
-      final fullQuery = '$action ${sym.name}';
       try {
-        final result = await execute(fullQuery);
-        if (!result.isEmpty) {
+        final result = await _executeForSymbol(action, sym);
+        if (result != null && !result.isEmpty) {
           results.add(result);
         }
       } catch (_) {
@@ -134,7 +139,212 @@ class QueryExecutor {
     }
 
     // Merge results based on type
-    return _mergeResults(results, action);
+    return _mergeResults(results, actionStr);
+  }
+
+  /// Parse action string, returning null if unknown.
+  QueryAction? _parseAction(String action) {
+    return switch (action) {
+      'def' || 'definition' => QueryAction.definition,
+      'refs' || 'references' => QueryAction.references,
+      'members' => QueryAction.members,
+      'impls' || 'implementations' => QueryAction.implementations,
+      'supertypes' || 'super' => QueryAction.supertypes,
+      'subtypes' || 'sub' => QueryAction.subtypes,
+      'hierarchy' => QueryAction.hierarchy,
+      'source' || 'src' => QueryAction.source,
+      'sig' || 'signature' => QueryAction.signature,
+      'calls' || 'callees' => QueryAction.calls,
+      'callers' || 'calledby' => QueryAction.callers,
+      'deps' || 'dependencies' => QueryAction.deps,
+      _ => null,
+    };
+  }
+
+  /// Execute an action directly for a symbol (used in piping).
+  /// Returns null if the action doesn't support direct symbol input.
+  Future<QueryResult?> _executeForSymbol(
+    QueryAction action,
+    SymbolInfo sym,
+  ) async {
+    return switch (action) {
+      QueryAction.definition => _definitionForSymbol(sym),
+      QueryAction.references => _refsForSingleSymbol(sym),
+      QueryAction.members => _membersForSymbol(sym),
+      QueryAction.implementations => _implementationsForSymbol(sym),
+      QueryAction.supertypes => _supertypesForSymbol(sym),
+      QueryAction.subtypes => _subtypesForSymbol(sym),
+      QueryAction.hierarchy => _hierarchyForSymbol(sym),
+      QueryAction.source => _sourceForSymbol(sym),
+      QueryAction.signature => _signatureForSymbol(sym),
+      QueryAction.calls => _callsForSymbol(sym),
+      QueryAction.callers => _callersForSymbol(sym),
+      QueryAction.deps => _depsForSymbol(sym),
+      _ => null, // Actions like find, grep, files, stats don't take symbol input
+    };
+  }
+
+  /// Get definition for a specific symbol.
+  Future<QueryResult> _definitionForSymbol(SymbolInfo sym) async {
+    final def = index.findDefinition(sym.symbol);
+    if (def == null) {
+      return NotFoundResult(
+        'Symbol "${sym.name}" has no definition (may be external)',
+      );
+    }
+
+    final source = await index.getSource(sym.symbol);
+    return DefinitionResult([
+      DefinitionMatch(symbol: sym, location: def, source: source),
+    ]);
+  }
+
+  /// Get members for a specific symbol.
+  Future<QueryResult> _membersForSymbol(SymbolInfo sym) async {
+    if (sym.kindString != 'class' &&
+        sym.kindString != 'mixin' &&
+        sym.kindString != 'extension' &&
+        sym.kindString != 'enum') {
+      return NotFoundResult('${sym.name} is not a class/mixin/extension/enum');
+    }
+
+    final members = index.membersOf(sym.symbol).toList();
+    return MembersResult(symbol: sym, members: members);
+  }
+
+  /// Get implementations for a specific symbol.
+  Future<QueryResult> _implementationsForSymbol(SymbolInfo sym) async {
+    final impls = index.findImplementations(sym.symbol).toList();
+    return SearchResult(impls);
+  }
+
+  /// Get supertypes for a specific symbol.
+  Future<QueryResult> _supertypesForSymbol(SymbolInfo sym) async {
+    final supertypes = index.supertypesOf(sym.symbol).toList();
+    return HierarchyResult(
+      symbol: sym,
+      supertypes: supertypes,
+      subtypes: const <SymbolInfo>[],
+    );
+  }
+
+  /// Get subtypes for a specific symbol.
+  Future<QueryResult> _subtypesForSymbol(SymbolInfo sym) async {
+    final subtypes = index.subtypesOf(sym.symbol).toList();
+    return HierarchyResult(
+      symbol: sym,
+      supertypes: const <SymbolInfo>[],
+      subtypes: subtypes,
+    );
+  }
+
+  /// Get full hierarchy for a specific symbol.
+  Future<QueryResult> _hierarchyForSymbol(SymbolInfo sym) async {
+    final supertypes = index.supertypesOf(sym.symbol).toList();
+    final subtypes = index.subtypesOf(sym.symbol).toList();
+    return HierarchyResult(
+      symbol: sym,
+      supertypes: supertypes,
+      subtypes: subtypes,
+    );
+  }
+
+  /// Get source for a specific symbol.
+  Future<QueryResult> _sourceForSymbol(SymbolInfo sym) async {
+    final def = index.findDefinition(sym.symbol);
+    if (def == null) {
+      return NotFoundResult(
+        'Symbol "${sym.name}" has no definition (may be external)',
+      );
+    }
+
+    final source = await index.getSource(sym.symbol);
+    if (source == null) {
+      return NotFoundResult('Could not read source for "${sym.name}"');
+    }
+
+    return SourceResult(
+      symbol: sym,
+      source: source,
+      file: def.file,
+      startLine: def.line,
+    );
+  }
+
+  /// Get signature for a specific symbol.
+  Future<QueryResult> _signatureForSymbol(SymbolInfo sym) async {
+    final def = index.findDefinition(sym.symbol);
+    if (def == null) {
+      return NotFoundResult(
+        'Symbol "${sym.name}" has no definition (may be external)',
+      );
+    }
+
+    String? signature;
+    if (signatureProvider != null) {
+      signature = await signatureProvider!(sym.symbol);
+    }
+
+    if (signature == null) {
+      signature = await _extractSignatureFromSource(sym, def);
+    }
+
+    if (signature == null) {
+      return NotFoundResult('Could not extract signature for "${sym.name}"');
+    }
+
+    return SignatureResult(
+      symbol: sym,
+      signature: signature,
+      file: def.file,
+      line: def.line,
+    );
+  }
+
+  /// Get calls for a specific symbol.
+  Future<QueryResult> _callsForSymbol(SymbolInfo sym) async {
+    final calls = index.getCalls(sym.symbol).toList();
+    return CallGraphResult(
+      symbol: sym,
+      direction: 'calls',
+      connections: calls,
+    );
+  }
+
+  /// Get callers for a specific symbol.
+  Future<QueryResult> _callersForSymbol(SymbolInfo sym) async {
+    final callers = index.getCallers(sym.symbol).toList();
+    return CallGraphResult(
+      symbol: sym,
+      direction: 'callers',
+      connections: callers,
+    );
+  }
+
+  /// Get dependencies for a specific symbol.
+  Future<QueryResult> _depsForSymbol(SymbolInfo sym) async {
+    final deps = <String, SymbolInfo>{};
+
+    for (final called in index.getCalls(sym.symbol)) {
+      deps[called.symbol] = called;
+    }
+
+    if (sym.kind == scip.SymbolInformation_Kind.Class) {
+      final children = index.getChildren(sym.symbol);
+      for (final childId in children) {
+        for (final called in index.getCalls(childId)) {
+          deps[called.symbol] = called;
+        }
+      }
+    }
+
+    deps.remove(sym.symbol);
+    deps.removeWhere((id, _) => id.startsWith(sym.symbol));
+
+    return DependenciesResult(
+      symbol: sym,
+      dependencies: deps.values.toList(),
+    );
   }
 
   /// Extract symbols from a query result.
