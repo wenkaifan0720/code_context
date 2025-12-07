@@ -1,6 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:package_config/package_config.dart';
+import 'package:pubspec_parse/pubspec_parse.dart';
+// ignore: implementation_imports
+import 'package:scip_dart/scip_dart.dart' as scip_dart;
+// ignore: implementation_imports
+import 'package:scip_dart/src/gen/scip.pb.dart' as scip;
+
 import 'index_registry.dart';
 import 'scip_index.dart';
 
@@ -22,13 +29,9 @@ import 'scip_index.dart';
 class ExternalIndexBuilder {
   ExternalIndexBuilder({
     required IndexRegistry registry,
-    this.scipDartPath = 'scip-dart',
   }) : _registry = registry;
 
   final IndexRegistry _registry;
-
-  /// Path to scip-dart executable.
-  final String scipDartPath;
 
   /// Index the Dart SDK.
   ///
@@ -44,40 +47,44 @@ class ExternalIndexBuilder {
     final outputDir = _registry.sdkIndexPath(sdkVersion);
     await Directory(outputDir).create(recursive: true);
 
-    // Run scip-dart on SDK
-    final result = await _runScipDart(
-      projectPath: sdkPath,
-      outputPath: '$outputDir/index.scip',
-    );
+    try {
+      // Index using scip_dart library
+      final index = await _indexDirectory(sdkPath);
+      if (index == null) {
+        return IndexResult.failure('Failed to index SDK');
+      }
 
-    if (!result.success) {
-      return IndexResult.failure('scip-dart failed: ${result.error}');
+      // Save the index
+      final outputPath = '$outputDir/index.scip';
+      await File(outputPath).writeAsBytes(index.writeToBuffer());
+
+      // Write manifest
+      await _writeManifest(
+        outputDir,
+        type: 'sdk',
+        name: 'dart-sdk',
+        version: sdkVersion,
+        sourcePath: sdkPath,
+      );
+
+      // Load the index
+      final loadedIndex = await _registry.loadSdk(sdkVersion);
+      if (loadedIndex == null) {
+        return IndexResult.failure('Failed to load created index');
+      }
+
+      return IndexResult.success(
+        index: loadedIndex,
+        stats: {
+          'type': 'sdk',
+          'version': sdkVersion,
+          'symbols': loadedIndex.stats['symbols'] ?? 0,
+          'files': loadedIndex.stats['files'] ?? 0,
+        },
+      );
+    } catch (e) {
+      return IndexResult.failure('Failed to index SDK: $e');
     }
-
-    // Write manifest
-    await _writeManifest(
-      outputDir,
-      type: 'sdk',
-      name: 'dart-sdk',
-      version: sdkVersion,
-      sourcePath: sdkPath,
-    );
-
-    // Load the index
-    final index = await _registry.loadSdk(sdkVersion);
-    if (index == null) {
-      return IndexResult.failure('Failed to load created index');
-    }
-
-    return IndexResult.success(
-      index: index,
-      stats: {
-        'type': 'sdk',
-        'version': sdkVersion,
-        'symbols': index.stats['symbols'] ?? 0,
-        'files': index.stats['files'] ?? 0,
-      },
-    );
   }
 
   /// Index a pub package.
@@ -91,41 +98,78 @@ class ExternalIndexBuilder {
     final outputDir = _registry.packageIndexPath(name, version);
     await Directory(outputDir).create(recursive: true);
 
-    // Run scip-dart on package
-    final result = await _runScipDart(
-      projectPath: packagePath,
-      outputPath: '$outputDir/index.scip',
-    );
+    try {
+      // Index using scip_dart library
+      final index = await _indexDirectory(packagePath);
+      if (index == null) {
+        return IndexResult.failure('Failed to index package');
+      }
 
-    if (!result.success) {
-      return IndexResult.failure('scip-dart failed: ${result.error}');
+      // Save the index
+      final outputPath = '$outputDir/index.scip';
+      await File(outputPath).writeAsBytes(index.writeToBuffer());
+
+      // Write manifest
+      await _writeManifest(
+        outputDir,
+        type: 'package',
+        name: name,
+        version: version,
+        sourcePath: packagePath,
+      );
+
+      // Load the index
+      final loadedIndex = await _registry.loadPackage(name, version);
+      if (loadedIndex == null) {
+        return IndexResult.failure('Failed to load created index');
+      }
+
+      return IndexResult.success(
+        index: loadedIndex,
+        stats: {
+          'type': 'package',
+          'name': name,
+          'version': version,
+          'symbols': loadedIndex.stats['symbols'] ?? 0,
+          'files': loadedIndex.stats['files'] ?? 0,
+        },
+      );
+    } catch (e) {
+      return IndexResult.failure('Failed to index package: $e');
+    }
+  }
+
+  /// Index a directory using scip_dart library.
+  Future<scip.Index?> _indexDirectory(String path) async {
+    // Find pubspec first
+    final pubspecFile = File('$path/pubspec.yaml');
+    if (!await pubspecFile.exists()) {
+      return null;
+    }
+    final pubspec = Pubspec.parse(await pubspecFile.readAsString());
+
+    // Check if package_config exists
+    var packageConfig = await findPackageConfig(Directory(path));
+    if (packageConfig == null) {
+      // Create a minimal synthetic package config for pub cache packages
+      packageConfig = _createSyntheticPackageConfig(path, pubspec.name);
     }
 
-    // Write manifest
-    await _writeManifest(
-      outputDir,
-      type: 'package',
-      name: name,
-      version: version,
-      sourcePath: packagePath,
-    );
+    // Index using scip_dart library
+    return scip_dart.indexPackage(path, packageConfig, pubspec);
+  }
 
-    // Load the index
-    final index = await _registry.loadPackage(name, version);
-    if (index == null) {
-      return IndexResult.failure('Failed to load created index');
-    }
-
-    return IndexResult.success(
-      index: index,
-      stats: {
-        'type': 'package',
-        'name': name,
-        'version': version,
-        'symbols': index.stats['symbols'] ?? 0,
-        'files': index.stats['files'] ?? 0,
-      },
-    );
+  /// Create a minimal package config for indexing a single package.
+  PackageConfig _createSyntheticPackageConfig(String packagePath, String packageName) {
+    final packageUri = Uri.file('$packagePath/');
+    return PackageConfig([
+      Package(
+        packageName,
+        packageUri,
+        packageUriRoot: Uri.parse('lib/'),
+        languageVersion: LanguageVersion(3, 0), // Use a reasonable default
+      ),
+    ]);
   }
 
   /// Index all packages from pubspec.lock.
@@ -242,29 +286,6 @@ class ExternalIndexBuilder {
     return null;
   }
 
-  Future<_ScipResult> _runScipDart({
-    required String projectPath,
-    required String outputPath,
-  }) async {
-    try {
-      final result = await Process.run(
-        scipDartPath,
-        ['index', '--output', outputPath, projectPath],
-      );
-
-      if (result.exitCode != 0) {
-        return _ScipResult(
-          success: false,
-          error: result.stderr.toString(),
-        );
-      }
-
-      return _ScipResult(success: true);
-    } catch (e) {
-      return _ScipResult(success: false, error: e.toString());
-    }
-  }
-
   Future<void> _writeManifest(
     String outputDir, {
     required String type,
@@ -327,12 +348,6 @@ class ExternalIndexBuilder {
 
     return null;
   }
-}
-
-class _ScipResult {
-  _ScipResult({required this.success, this.error});
-  final bool success;
-  final String? error;
 }
 
 class _PackageInfo {

@@ -484,13 +484,30 @@ class QueryExecutor {
   }
 
   /// Find symbols based on query, supporting qualified names.
+  ///
+  /// Searches in the project index first, then in external indexes
+  /// (SDK, packages) if a registry is available.
   List<SymbolInfo> _findMatchingSymbols(ScipQuery query) {
     if (query.isQualified) {
       // Qualified lookup: Class.member
       return index.findQualified(query.container!, query.memberName).toList();
     } else {
-      // Regular lookup
-      return index.findSymbols(query.target).toList();
+      // Regular lookup - search project first, then external packages
+      final results = index.findSymbols(query.target).toList();
+
+      // Also search in registry if available (for cross-package queries)
+      if (registry != null) {
+        final externalResults = registry!.findSymbols(query.target);
+        // Add external results that aren't already in the project results
+        final projectSymbols = results.map((s) => s.symbol).toSet();
+        for (final sym in externalResults) {
+          if (!projectSymbols.contains(sym.symbol)) {
+            results.add(sym);
+          }
+        }
+      }
+
+      return results;
     }
   }
 
@@ -968,32 +985,73 @@ class QueryExecutor {
 
   Future<QueryResult> _search(ScipQuery query) async {
     final pattern = query.parsedPattern;
-    Iterable<SymbolInfo> results;
+    final projectResults = <SymbolInfo>[];
+    final externalResults = <SymbolInfo>[];
 
     try {
       // Use appropriate search method based on pattern type
       if (pattern.type == PatternType.fuzzy) {
         // Fuzzy uses edit distance matching
-        results = index.findSymbolsFuzzy(pattern.pattern);
+        projectResults.addAll(index.findSymbolsFuzzy(pattern.pattern));
+        // Note: fuzzy search not implemented for registry yet
       } else if (pattern.type == PatternType.regex) {
         // Regex searches all symbols
         final regex = pattern.toRegExp();
-        results = index.allSymbols.where((sym) {
+        projectResults.addAll(index.allSymbols.where((sym) {
           return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
-        });
+        }));
+        // Also search in registry
+        if (registry != null) {
+          for (final pkgIndex in registry!.packageIndexes.values) {
+            externalResults.addAll(pkgIndex.allSymbols.where((sym) {
+              return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
+            }));
+          }
+          if (registry!.sdkIndex != null) {
+            externalResults.addAll(registry!.sdkIndex!.allSymbols.where((sym) {
+              return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
+            }));
+          }
+        }
       } else if (pattern.type == PatternType.glob) {
         // Glob uses the existing findSymbols
-        results = index.findSymbols(query.target);
+        projectResults.addAll(index.findSymbols(query.target));
+        // Also search in registry
+        if (registry != null) {
+          externalResults.addAll(registry!.findSymbols(query.target));
+        }
       } else {
         // Literal - exact match on name
         final regex = pattern.toRegExp();
-        results = index.allSymbols.where((sym) {
+        projectResults.addAll(index.allSymbols.where((sym) {
           return regex.hasMatch(sym.name);
-        });
+        }));
+        // Also search in registry
+        if (registry != null) {
+          for (final pkgIndex in registry!.packageIndexes.values) {
+            externalResults.addAll(pkgIndex.allSymbols.where((sym) {
+              return regex.hasMatch(sym.name);
+            }));
+          }
+          if (registry!.sdkIndex != null) {
+            externalResults.addAll(registry!.sdkIndex!.allSymbols.where((sym) {
+              return regex.hasMatch(sym.name);
+            }));
+          }
+        }
       }
     } on FormatException catch (e) {
       return ErrorResult('Invalid pattern: ${e.message}');
     }
+
+    // Combine results, avoiding duplicates
+    final projectSymbols = projectResults.map((s) => s.symbol).toSet();
+    final allResults = <SymbolInfo>[
+      ...projectResults,
+      ...externalResults.where((s) => !projectSymbols.contains(s.symbol)),
+    ];
+
+    Iterable<SymbolInfo> results = allResults;
 
     // Apply kind filter
     final kind = query.kindFilter;
