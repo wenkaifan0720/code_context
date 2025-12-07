@@ -220,9 +220,15 @@ class QueryExecutor {
     }
 
     // Use registry for cross-package lookup if available
-    final members = registry != null
+    final allMembers = registry != null
         ? registry!.membersOf(sym.symbol)
         : index.membersOf(sym.symbol).toList();
+
+    // Filter out parameters - they are indexed as children but aren't class members
+    final members = allMembers
+        .where((m) => m.kindString != 'parameter')
+        .toList();
+
     return MembersResult(symbol: sym, members: members);
   }
 
@@ -625,8 +631,17 @@ class QueryExecutor {
       }
     }
 
+    // Deduplicate by file+line to avoid showing the same location twice
+    final seen = <String>{};
+    final uniqueRefs = allRefs.where((ref) {
+      final key = '${ref.file}:${ref.line}';
+      if (seen.contains(key)) return false;
+      seen.add(key);
+      return true;
+    }).toList();
+
     final referenceMatches = <ReferenceMatch>[];
-    for (final ref in allRefs) {
+    for (final ref in uniqueRefs) {
       final context = await index.getContext(ref);
       referenceMatches.add(
         ReferenceMatch(
@@ -711,9 +726,14 @@ class QueryExecutor {
 
     final sym = symbols.first;
     // Use registry for cross-package lookup if available
-    final members = registry != null
+    final allMembers = registry != null
         ? registry!.membersOf(sym.symbol)
         : index.membersOf(sym.symbol).toList();
+
+    // Filter out parameters - they are indexed as children but aren't class members
+    final members = allMembers
+        .where((m) => m.kindString != 'parameter')
+        .toList();
 
     return MembersResult(
       symbol: sym,

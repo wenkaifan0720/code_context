@@ -260,7 +260,7 @@ class MembersResult extends QueryResult {
     }
 
     for (final entry in byKind.entries) {
-      buffer.writeln('### ${_capitalize(entry.key)}s');
+      buffer.writeln('### ${_pluralize(entry.key)}');
       for (final member in entry.value) {
         buffer.writeln('- ${member.name}');
       }
@@ -287,15 +287,6 @@ class MembersResult extends QueryResult {
             .toList(),
       };
 
-  String _capitalize(String s) {
-    if (s.isEmpty) return s;
-    final capitalized = '${s[0].toUpperCase()}${s.substring(1)}';
-    // Fix common pluralization issues
-    if (capitalized.endsWith('ys') && !capitalized.endsWith('ays')) {
-      return '${capitalized.substring(0, capitalized.length - 2)}ies';
-    }
-    return capitalized;
-  }
 }
 
 /// Result containing symbol search matches.
@@ -831,7 +822,7 @@ class CallGraphResult extends QueryResult {
     }
 
     for (final entry in byKind.entries) {
-      buffer.writeln('### ${entry.key}s (${entry.value.length})');
+      buffer.writeln('### ${_pluralize(entry.key)} (${entry.value.length})');
       for (final sym in entry.value) {
         final file = sym.file ?? 'external';
         buffer.writeln('- `${sym.name}` ($file)');
@@ -955,7 +946,7 @@ class DependenciesResult extends QueryResult {
     }
 
     for (final entry in byKind.entries) {
-      buffer.writeln('### ${entry.key}s (${entry.value.length})');
+      buffer.writeln('### ${_pluralize(entry.key)} (${entry.value.length})');
       for (final sym in entry.value) {
         final file = sym.file ?? 'external';
         buffer.writeln('- `${sym.name}` ($file)');
@@ -1256,4 +1247,49 @@ class GrepCountResult extends QueryResult {
         'fileCounts': fileCounts,
         'totalCount': count,
       };
+}
+
+/// Properly pluralize a kind string.
+///
+/// Handles common pluralization rules:
+/// - 'class' → 'classes'
+/// - 'alias' → 'aliases' (typealias → type aliases)
+/// - 'property' → 'properties'
+/// - 'method' → 'methods'
+String _pluralize(String kind) {
+  // Special cases
+  switch (kind) {
+    case 'class':
+      return 'Classes';
+    case 'typealias':
+      return 'Type Aliases';
+    case 'property':
+      return 'Properties';
+    case 'unspecifiedkind':
+      return 'Other';
+  }
+
+  // Capitalize and add 's'
+  final capitalized = kind.isEmpty
+      ? kind
+      : '${kind[0].toUpperCase()}${kind.substring(1)}';
+
+  // Words ending in 's', 'x', 'z', 'ch', 'sh' add 'es'
+  if (kind.endsWith('s') ||
+      kind.endsWith('x') ||
+      kind.endsWith('z') ||
+      kind.endsWith('ch') ||
+      kind.endsWith('sh')) {
+    return '${capitalized}es';
+  }
+
+  // Words ending in consonant + 'y' → 'ies'
+  if (kind.endsWith('y') && kind.length > 1) {
+    final beforeY = kind[kind.length - 2];
+    if (!'aeiou'.contains(beforeY)) {
+      return '${capitalized.substring(0, capitalized.length - 1)}ies';
+    }
+  }
+
+  return '${capitalized}s';
 }
