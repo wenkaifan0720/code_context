@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/source/line_info.dart';
 import 'package:crypto/crypto.dart';
 import 'package:package_config/package_config.dart';
 import 'package:path/path.dart' as p;
@@ -420,10 +422,17 @@ class IncrementalScipIndexer {
       );
       result.unit.accept(visitor);
 
+      // Enhance occurrences with proper enclosing ranges from AST
+      final enhancedOccurrences = _enhanceOccurrencesWithRanges(
+        visitor.occurrences,
+        result.unit,
+        result.lineInfo,
+      );
+
       final doc = scip.Document(
         language: 'Dart',
         relativePath: relativePath,
-        occurrences: visitor.occurrences,
+        occurrences: enhancedOccurrences,
         symbols: visitor.symbols,
       );
 
@@ -560,10 +569,17 @@ class IncrementalScipIndexer {
       );
       result.unit.accept(visitor);
 
+      // Enhance occurrences with proper enclosing ranges from AST
+      final enhancedOccurrences = _enhanceOccurrencesWithRanges(
+        visitor.occurrences,
+        result.unit,
+        result.lineInfo,
+      );
+
       final doc = scip.Document(
         language: 'Dart',
         relativePath: relativePath,
-        occurrences: visitor.occurrences,
+        occurrences: enhancedOccurrences,
         symbols: visitor.symbols,
       );
 
@@ -575,6 +591,57 @@ class IncrementalScipIndexer {
       _updateController.add(IndexUpdate.error(filePath, e.toString()));
       return false;
     }
+  }
+
+  /// Enhance SCIP occurrences with proper enclosing ranges from AST.
+  ///
+  /// scip_dart doesn't always populate enclosingRange for definitions,
+  /// so we use the AST to find the actual extent of each declaration.
+  List<scip.Occurrence> _enhanceOccurrencesWithRanges(
+    List<scip.Occurrence> occurrences,
+    CompilationUnit unit,
+    LineInfo lineInfo,
+  ) {
+    // Build a map of (line, column) -> AST node end offset
+    final declarationEnds = <(int, int), int>{};
+
+    unit.accept(_DeclarationEndVisitor((node, nameOffset) {
+      final location = lineInfo.getLocation(nameOffset);
+      final endOffset = node.end;
+      final endLocation = lineInfo.getLocation(endOffset);
+      // Store as (line, column) -> endLine (0-indexed)
+      declarationEnds[(location.lineNumber - 1, location.columnNumber - 1)] =
+          endLocation.lineNumber - 1;
+    }));
+
+    return occurrences.map((occ) {
+      // Only enhance definition occurrences that don't have enclosingRange
+      final isDefinition =
+          (occ.symbolRoles & scip.SymbolRole.Definition.value) != 0;
+      if (!isDefinition || occ.enclosingRange.isNotEmpty) {
+        return occ;
+      }
+
+      // Find the end line from our map
+      final line = occ.range.isNotEmpty ? occ.range[0] : 0;
+      final col = occ.range.length > 1 ? occ.range[1] : 0;
+      final endLine = declarationEnds[(line, col)];
+
+      if (endLine == null) {
+        return occ;
+      }
+
+      // Create enhanced occurrence with enclosingRange
+      return scip.Occurrence(
+        range: occ.range,
+        symbol: occ.symbol,
+        symbolRoles: occ.symbolRoles,
+        overrideDocumentation: occ.overrideDocumentation,
+        syntaxKind: occ.syntaxKind,
+        diagnostics: occ.diagnostics,
+        enclosingRange: [line, 0, endLine, 0], // Full extent of declaration
+      );
+    }).toList();
   }
 
   /// Manually refresh a file (useful when watching is disabled).
@@ -770,4 +837,72 @@ class IndexErrorUpdate extends IndexUpdate {
 
   @override
   String toString() => 'IndexErrorUpdate($path: $message)';
+}
+
+/// Visitor that collects end positions of declarations for enclosing ranges.
+class _DeclarationEndVisitor extends RecursiveAstVisitor<void> {
+  _DeclarationEndVisitor(this.onDeclaration);
+
+  final void Function(AstNode node, int nameOffset) onDeclaration;
+
+  @override
+  void visitClassDeclaration(ClassDeclaration node) {
+    onDeclaration(node, node.name.offset);
+    super.visitClassDeclaration(node);
+  }
+
+  @override
+  void visitMixinDeclaration(MixinDeclaration node) {
+    onDeclaration(node, node.name.offset);
+    super.visitMixinDeclaration(node);
+  }
+
+  @override
+  void visitExtensionDeclaration(ExtensionDeclaration node) {
+    if (node.name != null) {
+      onDeclaration(node, node.name!.offset);
+    }
+    super.visitExtensionDeclaration(node);
+  }
+
+  @override
+  void visitEnumDeclaration(EnumDeclaration node) {
+    onDeclaration(node, node.name.offset);
+    super.visitEnumDeclaration(node);
+  }
+
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    onDeclaration(node, node.name.offset);
+    super.visitFunctionDeclaration(node);
+  }
+
+  @override
+  void visitMethodDeclaration(MethodDeclaration node) {
+    onDeclaration(node, node.name.offset);
+    super.visitMethodDeclaration(node);
+  }
+
+  @override
+  void visitConstructorDeclaration(ConstructorDeclaration node) {
+    // Constructor name offset is the return type (class name)
+    onDeclaration(node, node.returnType.offset);
+    super.visitConstructorDeclaration(node);
+  }
+
+  @override
+  void visitFieldDeclaration(FieldDeclaration node) {
+    for (final variable in node.fields.variables) {
+      onDeclaration(node, variable.name.offset);
+    }
+    super.visitFieldDeclaration(node);
+  }
+
+  @override
+  void visitTopLevelVariableDeclaration(TopLevelVariableDeclaration node) {
+    for (final variable in node.variables.variables) {
+      onDeclaration(node, variable.name.offset);
+    }
+    super.visitTopLevelVariableDeclaration(node);
+  }
 }

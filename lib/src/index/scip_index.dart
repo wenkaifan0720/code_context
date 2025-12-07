@@ -393,13 +393,100 @@ class ScipIndex {
 
     final lines = await file.readAsLines();
     final startLine = def.line;
-    final endLine = def.enclosingEndLine ?? (startLine + 20);
+
+    // Use enclosingEndLine if available, otherwise find the end by brace matching
+    int endLine;
+    if (def.enclosingEndLine != null) {
+      endLine = def.enclosingEndLine!;
+    } else {
+      // Find the end of the definition by matching braces
+      endLine = _findDefinitionEnd(lines, startLine);
+    }
 
     if (startLine >= lines.length) return null;
 
     return lines
         .sublist(startLine, endLine.clamp(0, lines.length))
         .join('\n');
+  }
+
+  /// Find the end line of a definition by matching braces.
+  ///
+  /// Handles classes, functions, methods, etc. by counting { and } braces.
+  /// Falls back to startLine + 50 if no braces found.
+  int _findDefinitionEnd(List<String> lines, int startLine) {
+    var braceCount = 0;
+    var foundOpenBrace = false;
+    var inString = false;
+    String? stringChar;
+    var inMultilineComment = false;
+
+    for (var i = startLine; i < lines.length; i++) {
+      final line = lines[i];
+
+      for (var j = 0; j < line.length; j++) {
+        final char = line[j];
+        final nextChar = j + 1 < line.length ? line[j + 1] : '';
+        final prevChar = j > 0 ? line[j - 1] : '';
+
+        // Handle comments
+        if (!inString) {
+          if (inMultilineComment) {
+            if (char == '*' && nextChar == '/') {
+              inMultilineComment = false;
+              j++; // Skip the /
+            }
+            continue;
+          }
+          if (char == '/' && nextChar == '/') {
+            break; // Rest of line is comment
+          }
+          if (char == '/' && nextChar == '*') {
+            inMultilineComment = true;
+            j++; // Skip the *
+            continue;
+          }
+        }
+
+        // Handle strings
+        if ((char == '"' || char == "'") && prevChar != r'\') {
+          if (!inString) {
+            inString = true;
+            stringChar = char;
+            // Check for triple quotes
+            if (j + 2 < line.length &&
+                line[j + 1] == char &&
+                line[j + 2] == char) {
+              j += 2;
+              stringChar = '$char$char$char';
+            }
+          } else if (stringChar == char ||
+              (stringChar!.length == 3 &&
+                  j + 2 < line.length &&
+                  line.substring(j, j + 3) == stringChar)) {
+            inString = false;
+            stringChar = null;
+          }
+          continue;
+        }
+
+        if (inString) continue;
+
+        // Count braces
+        if (char == '{') {
+          foundOpenBrace = true;
+          braceCount++;
+        } else if (char == '}') {
+          braceCount--;
+          if (foundOpenBrace && braceCount == 0) {
+            return i + 1; // Include the closing brace line
+          }
+        }
+      }
+    }
+
+    // Fallback: if no matching braces found, return a reasonable amount
+    return (startLine + 50).clamp(0, lines.length);
   }
 
   /// Get source context around an occurrence.
