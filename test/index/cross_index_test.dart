@@ -465,6 +465,202 @@ class ExternalHelper {
     });
   });
 
+  group('Qualified lookup across indexes', () {
+    late ScipIndex projectIndex;
+    late ScipIndex packageIndex;
+    late IndexRegistry registry;
+
+    setUp(() {
+      projectIndex = ScipIndex.empty(projectRoot: projectRoot);
+      packageIndex = ScipIndex.fromScipIndex(
+        scip.Index(documents: [
+          scip.Document(
+            relativePath: 'lib/utils.dart',
+            symbols: [
+              scip.SymbolInformation(
+                symbol: 'external_pkg lib/utils.dart/ExternalHelper#',
+                kind: scip.SymbolInformation_Kind.Class,
+                displayName: 'ExternalHelper',
+              ),
+              scip.SymbolInformation(
+                symbol: 'external_pkg lib/utils.dart/ExternalHelper#doWork().',
+                kind: scip.SymbolInformation_Kind.Method,
+                displayName: 'doWork',
+              ),
+            ],
+            occurrences: [
+              scip.Occurrence(
+                symbol: 'external_pkg lib/utils.dart/ExternalHelper#',
+                range: [0, 0, 3, 1],
+                symbolRoles: scip.SymbolRole.Definition.value,
+              ),
+              scip.Occurrence(
+                symbol: 'external_pkg lib/utils.dart/ExternalHelper#doWork().',
+                range: [2, 2, 2, 10],
+                symbolRoles: scip.SymbolRole.Definition.value,
+              ),
+            ],
+          ),
+        ]),
+        projectRoot: '${tempDir.path}/cache/external_pkg',
+        sourceRoot: externalSourceRoot,
+      );
+
+      registry = IndexRegistry.withIndexes(
+        projectIndex: projectIndex,
+        packageIndexes: {'external_pkg-1.0.0': packageIndex},
+      );
+    });
+
+    test('findQualified returns external method', () {
+      final syms = registry.findQualified('ExternalHelper', 'doWork').toList();
+      expect(syms.length, 1);
+      expect(syms.first.symbol,
+          'external_pkg lib/utils.dart/ExternalHelper#doWork().');
+    });
+  });
+
+  group('Symbol disambiguation prefers classes over params', () {
+    late Directory srcDir;
+    late ScipIndex projectIndex;
+    late QueryExecutor executor;
+
+    setUp(() async {
+      srcDir = await Directory.systemTemp.createTemp('disambig');
+      final root = srcDir.path;
+      final filePath = '$root/lib/main.dart';
+      await File(filePath).create(recursive: true);
+      await File(filePath).writeAsString('''
+class Container {
+  void build() {}
+}
+
+void fn({bool container = false}) {}
+''');
+
+      projectIndex = ScipIndex.fromScipIndex(
+        scip.Index(documents: [
+          scip.Document(
+            relativePath: 'lib/main.dart',
+            symbols: [
+              scip.SymbolInformation(
+                symbol: 'proj lib/main.dart/Container#',
+                kind: scip.SymbolInformation_Kind.Class,
+                displayName: 'Container',
+              ),
+              scip.SymbolInformation(
+                symbol: 'proj lib/main.dart/fn().(container)',
+                kind: scip.SymbolInformation_Kind.Parameter,
+                displayName: 'container',
+              ),
+            ],
+            occurrences: [
+              scip.Occurrence(
+                symbol: 'proj lib/main.dart/Container#',
+                range: [0, 0, 2, 1],
+                symbolRoles: scip.SymbolRole.Definition.value,
+                enclosingRange: [0, 0, 2, 1],
+              ),
+              scip.Occurrence(
+                symbol: 'proj lib/main.dart/fn().(container)',
+                range: [5, 9, 5, 18],
+                symbolRoles: scip.SymbolRole.Definition.value,
+              ),
+            ],
+          ),
+        ]),
+        projectRoot: root,
+        sourceRoot: root,
+      );
+
+      executor = QueryExecutor(projectIndex);
+    });
+
+    tearDown(() async {
+      await srcDir.delete(recursive: true);
+    });
+
+    test('source Container returns class, not param', () async {
+      final result = await executor.execute('source Container');
+      expect(result, isA<SourceResult>());
+      final src = (result as SourceResult).source;
+      expect(src, contains('class Container'));
+      expect(src, isNot(contains('bool container')));
+    });
+  });
+
+  group('Grep with dependencies flag', () {
+    late Directory rootDir;
+    late ScipIndex projectIndex;
+    late ScipIndex packageIndex;
+    late IndexRegistry registry;
+
+    setUp(() async {
+      rootDir = await Directory.systemTemp.createTemp('grep_deps');
+      final projRoot = '${rootDir.path}/project';
+      final extRoot = '${rootDir.path}/external';
+      await File('$projRoot/lib/main.dart').create(recursive: true);
+      await File('$projRoot/lib/main.dart')
+          .writeAsString('class Local {}\nStatelessWidget;\n');
+      await File('$extRoot/lib/utils.dart').create(recursive: true);
+      await File('$extRoot/lib/utils.dart')
+          .writeAsString('class External {}\nStatelessWidget;\n');
+
+      projectIndex = ScipIndex.fromScipIndex(
+        scip.Index(documents: [
+          scip.Document(
+            relativePath: 'lib/main.dart',
+            symbols: [],
+            occurrences: [],
+          ),
+        ]),
+        projectRoot: projRoot,
+        sourceRoot: projRoot,
+      );
+
+      packageIndex = ScipIndex.fromScipIndex(
+        scip.Index(documents: [
+          scip.Document(
+            relativePath: 'lib/utils.dart',
+            symbols: [],
+            occurrences: [],
+          ),
+        ]),
+        projectRoot: '${rootDir.path}/cache/external',
+        sourceRoot: extRoot,
+      );
+
+      registry = IndexRegistry.withIndexes(
+        projectIndex: projectIndex,
+        packageIndexes: {'external-1.0.0': packageIndex},
+      );
+    });
+
+    tearDown(() async {
+      await rootDir.delete(recursive: true);
+    });
+
+    test('grep without -D searches project only', () async {
+      final matches = await registry.grep(
+        RegExp('StatelessWidget'),
+        includeExternal: false,
+      );
+      final files = matches.map((m) => m.file).toSet();
+      expect(files, contains('lib/main.dart'));
+      expect(files, isNot(contains('lib/utils.dart')));
+    });
+
+    test('grep with -D includes external packages', () async {
+      final matches = await registry.grep(
+        RegExp('StatelessWidget'),
+        includeExternal: true,
+      );
+      final files = matches.map((m) => m.file).toSet();
+      expect(files, contains('lib/main.dart'));
+      expect(files, contains('lib/utils.dart'));
+    });
+  });
+
   group('IndexRegistry allIndexes', () {
     test('returns project, SDK, and package indexes', () {
       final projectIndex = ScipIndex.empty(projectRoot: '/project');
