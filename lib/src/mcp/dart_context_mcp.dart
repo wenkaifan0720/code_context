@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dart_mcp/server.dart';
 
 import '../dart_context.dart';
+import '../index/external_index_builder.dart';
+import '../index/index_registry.dart';
+import '../index/scip_index.dart';
 
 /// Mix this in to any MCPServer to add Dart code intelligence via dart_context.
 ///
@@ -23,6 +27,12 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
   /// Cached DartContext instances per project root.
   final Map<String, DartContext> _contexts = {};
 
+  /// File watchers for package_config.json per project root.
+  final Map<String, StreamSubscription<FileSystemEvent>> _packageConfigWatchers = {};
+
+  /// Roots marked as stale (package_config changed since last refresh).
+  final Set<String> _staleRoots = {};
+
   /// Whether to use cached indexes.
   bool get useCache => true;
 
@@ -40,6 +50,10 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     }
 
     registerTool(dartQueryTool, _handleDartQuery);
+    registerTool(dartIndexFlutterTool, _handleIndexFlutter);
+    registerTool(dartIndexDepsTool, _handleIndexDeps);
+    registerTool(dartRefreshTool, _handleRefresh);
+    registerTool(dartStatusTool, _handleStatus);
 
     return result;
   }
@@ -51,12 +65,15 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     final currentRoots = await roots;
     final currentRootUris = currentRoots.map((r) => r.uri).toSet();
 
-    // Remove contexts for roots that no longer exist
+    // Remove contexts and watchers for roots that no longer exist
     final removedRoots =
         _contexts.keys.where((r) => !currentRootUris.contains(r)).toList();
     for (final root in removedRoots) {
       await _contexts[root]?.dispose();
       _contexts.remove(root);
+      await _packageConfigWatchers[root]?.cancel();
+      _packageConfigWatchers.remove(root);
+      _staleRoots.remove(root);
       log(LoggingLevel.debug, 'Removed DartContext for: $root');
     }
 
@@ -69,7 +86,43 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       await context.dispose();
     }
     _contexts.clear();
+    for (final watcher in _packageConfigWatchers.values) {
+      await watcher.cancel();
+    }
+    _packageConfigWatchers.clear();
+    _staleRoots.clear();
     await super.shutdown();
+  }
+
+  /// Start watching package_config.json for changes.
+  void _watchPackageConfig(String rootUri, String rootPath) {
+    // Cancel existing watcher if any
+    _packageConfigWatchers[rootUri]?.cancel();
+
+    final configPath = '$rootPath/.dart_tool/package_config.json';
+    final configFile = File(configPath);
+
+    if (!configFile.existsSync()) return;
+
+    try {
+      final watcher = configFile.parent.watch().where((event) {
+        return event.path.endsWith('package_config.json');
+      }).listen((event) {
+        log(
+          LoggingLevel.info,
+          'package_config.json changed for $rootPath - dependencies may need refresh',
+        );
+        _staleRoots.add(rootUri);
+      });
+
+      _packageConfigWatchers[rootUri] = watcher;
+      log(LoggingLevel.debug, 'Watching package_config.json for $rootPath');
+    } catch (e) {
+      log(
+        LoggingLevel.warning,
+        'Could not watch package_config.json: $e',
+      );
+    }
   }
 
   /// Get or create a DartContext for the given project path.
@@ -82,6 +135,13 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       if (filePath.startsWith(rootPath)) {
         // Check if we already have a context for this root
         if (_contexts.containsKey(root.uri)) {
+          // Warn if stale
+          if (_staleRoots.contains(root.uri)) {
+            log(
+              LoggingLevel.warning,
+              'Dependencies may be out of date. Use dart_refresh to reload.',
+            );
+          }
           return _contexts[root.uri];
         }
 
@@ -92,13 +152,20 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
             rootPath,
             watch: true,
             useCache: useCache,
+            loadDependencies: true, // Always try to load deps
           );
           _contexts[root.uri] = context;
 
+          // Start watching package_config.json
+          _watchPackageConfig(root.uri, rootPath);
+
+          final depsInfo = context.hasDependencies
+              ? ', ${context.registry!.packageIndexes.length} packages loaded'
+              : '';
           log(
             LoggingLevel.info,
             'Indexed ${context.stats['files']} files, '
-            '${context.stats['symbols']} symbols',
+            '${context.stats['symbols']} symbols$depsInfo',
           );
 
           return context;
@@ -121,6 +188,13 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     final rootPath = Uri.parse(firstRoot.uri).toFilePath();
 
     if (_contexts.containsKey(firstRoot.uri)) {
+      // Warn if stale
+      if (_staleRoots.contains(firstRoot.uri)) {
+        log(
+          LoggingLevel.warning,
+          'Dependencies may be out of date. Use dart_refresh to reload.',
+        );
+      }
       return _contexts[firstRoot.uri];
     }
 
@@ -130,13 +204,20 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
         rootPath,
         watch: true,
         useCache: useCache,
+        loadDependencies: true, // Always try to load deps
       );
       _contexts[firstRoot.uri] = context;
 
+      // Start watching package_config.json
+      _watchPackageConfig(firstRoot.uri, rootPath);
+
+      final depsInfo = context.hasDependencies
+          ? ', ${context.registry!.packageIndexes.length} packages loaded'
+          : '';
       log(
         LoggingLevel.info,
         'Indexed ${context.stats['files']} files, '
-        '${context.stats['symbols']} symbols',
+        '${context.stats['symbols']} symbols$depsInfo',
       );
 
       return context;
@@ -189,6 +270,307 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
         isError: true,
       );
     }
+  }
+
+  /// Handle dart_index_flutter tool.
+  Future<CallToolResult> _handleIndexFlutter(CallToolRequest request) async {
+    final flutterRoot = request.arguments?['flutterRoot'] as String?;
+
+    // Create a temporary registry for building
+    final tempIndex = ScipIndex.empty(projectRoot: flutterRoot ?? '.');
+    final registry = IndexRegistry(projectIndex: tempIndex);
+    final builder = ExternalIndexBuilder(registry: registry);
+
+    final messages = <String>[];
+
+    try {
+      final result = await builder.indexFlutterPackages(
+        flutterPath: flutterRoot,
+        onProgress: (msg) {
+          log(LoggingLevel.info, msg);
+          messages.add(msg);
+        },
+      );
+
+      if (!result.success) {
+        return CallToolResult(
+          content: [TextContent(text: 'Failed: ${result.error}')],
+          isError: true,
+        );
+      }
+
+      final output = StringBuffer();
+      output.writeln('Flutter ${result.version} indexed successfully');
+      output.writeln('');
+      output.writeln('Packages indexed: ${result.indexed}');
+      output.writeln('Total symbols: ${result.totalSymbols}');
+      output.writeln('');
+      output.writeln('Results:');
+      for (final pkg in result.results) {
+        if (pkg.success) {
+          output.writeln('  - ${pkg.name}: ${pkg.symbolCount} symbols');
+        } else if (pkg.skipped) {
+          output.writeln('  - ${pkg.name}: skipped (${pkg.reason})');
+        } else {
+          output.writeln('  - ${pkg.name}: failed (${pkg.error})');
+        }
+      }
+      output.writeln('');
+      output.writeln('Indexes saved to: ${registry.globalCachePath}/packages/');
+
+      return CallToolResult(
+        content: [TextContent(text: output.toString())],
+        isError: false,
+      );
+    } catch (e) {
+      return CallToolResult(
+        content: [TextContent(text: 'Error indexing Flutter: $e')],
+        isError: true,
+      );
+    }
+  }
+
+  /// Handle dart_index_deps tool.
+  Future<CallToolResult> _handleIndexDeps(CallToolRequest request) async {
+    final projectHint = request.arguments?['projectRoot'] as String?;
+
+    // Resolve project path
+    String projectPath;
+    if (projectHint != null) {
+      projectPath = projectHint;
+    } else {
+      final currentRoots = await roots;
+      if (currentRoots.isEmpty) {
+        return CallToolResult(
+          content: [TextContent(text: 'No project roots configured.')],
+          isError: true,
+        );
+      }
+      projectPath = Uri.parse(currentRoots.first.uri).toFilePath();
+    }
+
+    // Check for pubspec.lock
+    final lockfile = File('$projectPath/pubspec.lock');
+    if (!await lockfile.exists()) {
+      return CallToolResult(
+        content: [
+          TextContent(
+            text:
+                'No pubspec.lock found in $projectPath. Run "dart pub get" first.',
+          ),
+        ],
+        isError: true,
+      );
+    }
+
+    log(LoggingLevel.info, 'Indexing dependencies from $projectPath...');
+
+    // Create a temporary registry for building
+    final tempIndex = ScipIndex.empty(projectRoot: projectPath);
+    final registry = IndexRegistry(projectIndex: tempIndex);
+    final builder = ExternalIndexBuilder(registry: registry);
+
+    try {
+      final result = await builder.indexDependencies(projectPath);
+
+      if (!result.success) {
+        return CallToolResult(
+          content: [TextContent(text: 'Failed: ${result.error}')],
+          isError: true,
+        );
+      }
+
+      final output = StringBuffer();
+      output.writeln('Dependencies indexed from $projectPath');
+      output.writeln('');
+      output.writeln('Indexed: ${result.indexed}');
+      output.writeln('Skipped (already indexed): ${result.skipped}');
+      output.writeln('Failed: ${result.failed}');
+
+      if (result.failed > 0) {
+        output.writeln('');
+        output.writeln('Failed packages:');
+        for (final pkg
+            in result.results.where((r) => !r.success && !r.skipped)) {
+          output.writeln('  - ${pkg.name}-${pkg.version}: ${pkg.error}');
+        }
+      }
+
+      return CallToolResult(
+        content: [TextContent(text: output.toString())],
+        isError: false,
+      );
+    } catch (e) {
+      return CallToolResult(
+        content: [TextContent(text: 'Error indexing dependencies: $e')],
+        isError: true,
+      );
+    }
+  }
+
+  /// Handle dart_refresh tool.
+  Future<CallToolResult> _handleRefresh(CallToolRequest request) async {
+    final projectHint = request.arguments?['projectRoot'] as String?;
+    final fullReindex = request.arguments?['fullReindex'] as bool? ?? false;
+
+    // Find the root to refresh
+    final currentRoots = await roots;
+    Root? targetRoot;
+
+    if (projectHint != null) {
+      for (final root in currentRoots) {
+        final rootPath = Uri.parse(root.uri).toFilePath();
+        if (rootPath == projectHint || projectHint.startsWith(rootPath)) {
+          targetRoot = root;
+          break;
+        }
+      }
+    } else if (currentRoots.isNotEmpty) {
+      targetRoot = currentRoots.first;
+    }
+
+    if (targetRoot == null) {
+      return CallToolResult(
+        content: [TextContent(text: 'No matching project root found.')],
+        isError: true,
+      );
+    }
+
+    final rootPath = Uri.parse(targetRoot.uri).toFilePath();
+
+    // Dispose existing context and clear stale flag
+    final existingContext = _contexts.remove(targetRoot.uri);
+    if (existingContext != null) {
+      await existingContext.dispose();
+      log(LoggingLevel.info, 'Disposed existing context for $rootPath');
+    }
+    _staleRoots.remove(targetRoot.uri);
+
+    // Create fresh context
+    try {
+      log(LoggingLevel.info, 'Refreshing DartContext for: $rootPath');
+      final context = await DartContext.open(
+        rootPath,
+        watch: true,
+        useCache: !fullReindex,
+        loadDependencies: true,
+      );
+      _contexts[targetRoot.uri] = context;
+
+      // Re-establish package_config watcher
+      _watchPackageConfig(targetRoot.uri, rootPath);
+
+      final depsInfo = context.hasDependencies
+          ? ', ${context.registry!.packageIndexes.length} packages loaded'
+          : '';
+
+      final output = StringBuffer();
+      output.writeln('Refreshed: $rootPath');
+      output.writeln('Files: ${context.stats['files']}');
+      output.writeln('Symbols: ${context.stats['symbols']}');
+      if (context.hasDependencies) {
+        output.writeln('Packages: ${context.registry!.packageIndexes.length}');
+      }
+
+      log(
+        LoggingLevel.info,
+        'Refreshed ${context.stats['files']} files, '
+        '${context.stats['symbols']} symbols$depsInfo',
+      );
+
+      return CallToolResult(
+        content: [TextContent(text: output.toString())],
+        isError: false,
+      );
+    } catch (e) {
+      return CallToolResult(
+        content: [TextContent(text: 'Error refreshing context: $e')],
+        isError: true,
+      );
+    }
+  }
+
+  /// Handle dart_status tool.
+  Future<CallToolResult> _handleStatus(CallToolRequest request) async {
+    final projectHint = request.arguments?['projectRoot'] as String?;
+
+    // Find the context
+    DartContext? context;
+    String? rootPath;
+
+    if (projectHint != null) {
+      context = await _getContextForPath(projectHint);
+      rootPath = projectHint;
+    } else {
+      final currentRoots = await roots;
+      if (currentRoots.isNotEmpty) {
+        rootPath = Uri.parse(currentRoots.first.uri).toFilePath();
+        if (_contexts.containsKey(currentRoots.first.uri)) {
+          context = _contexts[currentRoots.first.uri];
+        }
+      }
+    }
+
+    final output = StringBuffer();
+    output.writeln('## Dart Context Status');
+    output.writeln('');
+
+    if (context == null) {
+      output.writeln('Project: ${rootPath ?? "(none)"}');
+      output.writeln('Status: Not indexed');
+      output.writeln('');
+      output.writeln('Use dart_query to trigger indexing, or dart_refresh to reload.');
+    } else {
+      output.writeln('Project: ${context.projectRoot}');
+      output.writeln('Files: ${context.stats['files']}');
+      output.writeln('Symbols: ${context.stats['symbols']}');
+      output.writeln('References: ${context.stats['references']}');
+      output.writeln('');
+
+      if (context.hasDependencies) {
+        final registry = context.registry!;
+        output.writeln('### External Indexes');
+        output.writeln('');
+        if (registry.loadedSdkVersion != null) {
+          output.writeln('SDK: Dart ${registry.loadedSdkVersion}');
+        }
+        output.writeln('Packages loaded: ${registry.packageIndexes.length}');
+        if (registry.packageIndexes.isNotEmpty) {
+          output.writeln('');
+          final pkgNames = registry.packageIndexes.keys.take(10).toList();
+          for (final name in pkgNames) {
+            output.writeln('  - $name');
+          }
+          if (registry.packageIndexes.length > 10) {
+            output.writeln(
+                '  ... and ${registry.packageIndexes.length - 10} more');
+          }
+        }
+      } else {
+        output.writeln('External indexes: Not loaded');
+        output.writeln(
+            'Use dart_index_flutter and dart_index_deps to enable cross-package queries.');
+      }
+    }
+
+    // Also show available indexes on disk
+    final tempIndex = ScipIndex.empty(projectRoot: '.');
+    final registry = IndexRegistry(projectIndex: tempIndex);
+    final builder = ExternalIndexBuilder(registry: registry);
+
+    final sdkVersions = await builder.listSdkIndexes();
+    final packages = await builder.listPackageIndexes();
+
+    output.writeln('');
+    output.writeln('### Available Indexes (on disk)');
+    output.writeln('');
+    output.writeln('SDK versions: ${sdkVersions.isEmpty ? "(none)" : sdkVersions.join(", ")}');
+    output.writeln('Package indexes: ${packages.length}');
+
+    return CallToolResult(
+      content: [TextContent(text: output.toString())],
+      isError: false,
+    );
   }
 
   /// The dart_query tool definition.
@@ -295,6 +677,105 @@ Semantic code navigation - understands definitions, references, types, call grap
         ),
       },
       required: ['query'],
+    ),
+  );
+
+  /// Tool to index Flutter SDK packages.
+  static final dartIndexFlutterTool = Tool(
+    name: 'dart_index_flutter',
+    description: '''Index Flutter SDK packages for cross-package queries.
+
+One-time setup that indexes flutter, flutter_test, flutter_driver, flutter_localizations, and flutter_web_plugins.
+
+After indexing, queries like `hierarchy StatefulWidget` and `refs Navigator` will work across your project and Flutter.
+
+Takes ~1 minute for a typical Flutter SDK.''',
+    annotations: ToolAnnotations(
+      title: 'Index Flutter SDK',
+      readOnlyHint: false,
+    ),
+    inputSchema: Schema.object(
+      properties: {
+        'flutterRoot': Schema.string(
+          description:
+              'Path to Flutter SDK root. If not provided, uses FLUTTER_ROOT env var or finds from PATH.',
+        ),
+      },
+    ),
+  );
+
+  /// Tool to index pub dependencies.
+  static final dartIndexDepsTool = Tool(
+    name: 'dart_index_deps',
+    description: '''Index pub dependencies from pubspec.lock.
+
+Pre-indexes all packages listed in pubspec.lock for cross-package queries. Skips packages already indexed.
+
+Run this after adding new dependencies or when setting up a new project.
+
+Takes ~1-2 minutes for typical projects.''',
+    annotations: ToolAnnotations(
+      title: 'Index Dependencies',
+      readOnlyHint: false,
+    ),
+    inputSchema: Schema.object(
+      properties: {
+        'projectRoot': Schema.string(
+          description:
+              'Path to project with pubspec.lock. If not provided, uses the first configured root.',
+        ),
+      },
+    ),
+  );
+
+  /// Tool to refresh project index.
+  static final dartRefreshTool = Tool(
+    name: 'dart_refresh',
+    description: '''Refresh project index and reload dependencies.
+
+Use after:
+- pubspec.yaml or pubspec.lock changes
+- Major refactoring
+- When you suspect the index is stale
+
+Set fullReindex=true to ignore cache and rebuild from scratch.''',
+    annotations: ToolAnnotations(
+      title: 'Refresh Index',
+      readOnlyHint: false,
+    ),
+    inputSchema: Schema.object(
+      properties: {
+        'projectRoot': Schema.string(
+          description: 'Path to project. If not provided, uses the first configured root.',
+        ),
+        'fullReindex': Schema.bool(
+          description: 'Force full re-index, ignoring cache. Default: false.',
+        ),
+      },
+    ),
+  );
+
+  /// Tool to show index status.
+  static final dartStatusTool = Tool(
+    name: 'dart_status',
+    description: '''Show index status: files, symbols, loaded packages, SDK version.
+
+Displays:
+- Project index statistics (files, symbols, references)
+- Loaded external packages
+- Available pre-computed indexes on disk
+
+Use to verify indexing is complete before querying.''',
+    annotations: ToolAnnotations(
+      title: 'Index Status',
+      readOnlyHint: true,
+    ),
+    inputSchema: Schema.object(
+      properties: {
+        'projectRoot': Schema.string(
+          description: 'Path to project. If not provided, uses the first configured root.',
+        ),
+      },
     ),
   );
 }

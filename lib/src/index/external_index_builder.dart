@@ -353,6 +353,145 @@ class ExternalIndexBuilder {
     );
   }
 
+  /// Index Flutter framework packages.
+  ///
+  /// This indexes the main Flutter packages (flutter, flutter_test, etc.)
+  /// to enable queries like `hierarchy StatelessWidget`.
+  ///
+  /// [flutterPath] should point to the Flutter SDK root.
+  /// If not provided, uses FLUTTER_ROOT environment variable or tries to find from PATH.
+  ///
+  /// [onProgress] callback is invoked with status messages during indexing.
+  Future<FlutterIndexResult> indexFlutterPackages({
+    String? flutterPath,
+    void Function(String message)? onProgress,
+  }) async {
+    // Resolve Flutter path
+    final resolvedPath = await _resolveFlutterPath(flutterPath);
+    if (resolvedPath == null) {
+      return FlutterIndexResult(
+        success: false,
+        error: 'Flutter SDK not found. Provide path or set FLUTTER_ROOT.',
+      );
+    }
+
+    final packagesPath = '$resolvedPath/packages';
+    if (!await Directory(packagesPath).exists()) {
+      return FlutterIndexResult(
+        success: false,
+        error: 'Flutter packages not found at $packagesPath',
+      );
+    }
+
+    // Get Flutter version
+    final versionFile = File('$resolvedPath/version');
+    final version = await versionFile.exists()
+        ? (await versionFile.readAsString()).trim()
+        : 'unknown';
+
+    onProgress?.call('Indexing Flutter $version packages from $resolvedPath');
+
+    // List of Flutter packages to index
+    const flutterPackages = [
+      'flutter',
+      'flutter_test',
+      'flutter_driver',
+      'flutter_localizations',
+      'flutter_web_plugins',
+    ];
+
+    final results = <PackageIndexResult>[];
+
+    for (final pkgName in flutterPackages) {
+      final pkgPath = '$packagesPath/$pkgName';
+      if (!await Directory(pkgPath).exists()) {
+        onProgress?.call('Skipping $pkgName (not found)');
+        results.add(PackageIndexResult(
+          name: pkgName,
+          version: version,
+          skipped: true,
+          reason: 'not found',
+        ));
+        continue;
+      }
+
+      // Check if package_config.json exists, run flutter pub get if not
+      final pkgConfigFile = File('$pkgPath/.dart_tool/package_config.json');
+      if (!await pkgConfigFile.exists()) {
+        onProgress?.call('Running flutter pub get in $pkgName...');
+        final result = await Process.run(
+          'flutter',
+          ['pub', 'get'],
+          workingDirectory: pkgPath,
+        );
+        if (result.exitCode != 0) {
+          onProgress?.call('Failed to get dependencies for $pkgName');
+          results.add(PackageIndexResult(
+            name: pkgName,
+            version: version,
+            error: 'pub get failed',
+          ));
+          continue;
+        }
+      }
+
+      onProgress?.call('Indexing $pkgName...');
+      final result = await indexPackage(pkgName, version, pkgPath);
+
+      if (result.success) {
+        onProgress?.call('$pkgName: ${result.stats?['symbols']} symbols');
+        results.add(PackageIndexResult(
+          name: pkgName,
+          version: version,
+          success: true,
+          symbolCount: result.stats?['symbols'] as int?,
+        ));
+      } else {
+        onProgress?.call('$pkgName: failed - ${result.error}');
+        results.add(PackageIndexResult(
+          name: pkgName,
+          version: version,
+          error: result.error,
+        ));
+      }
+    }
+
+    return FlutterIndexResult(
+      success: results.any((r) => r.success),
+      flutterPath: resolvedPath,
+      version: version,
+      results: results,
+    );
+  }
+
+  /// Resolve Flutter path from argument, env var, or PATH.
+  Future<String?> _resolveFlutterPath(String? providedPath) async {
+    if (providedPath != null && await Directory(providedPath).exists()) {
+      return providedPath;
+    }
+
+    // Try FLUTTER_ROOT env var
+    final envPath = Platform.environment['FLUTTER_ROOT'];
+    if (envPath != null && await Directory(envPath).exists()) {
+      return envPath;
+    }
+
+    // Try to find Flutter from the flutter command
+    try {
+      final result = await Process.run('which', ['flutter']);
+      if (result.exitCode == 0) {
+        final flutterBin = result.stdout.toString().trim();
+        // Flutter binary is at FLUTTER_ROOT/bin/flutter
+        final path = Directory(flutterBin).parent.parent.path;
+        if (await Directory(path).exists()) {
+          return path;
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   /// List available SDK indexes.
   Future<List<String>> listSdkIndexes() async {
     final dir = Directory('${_registry.globalCachePath}/sdk');
@@ -495,6 +634,31 @@ class BatchIndexResult {
   int get indexed => results.where((r) => r.success).length;
   int get skipped => results.where((r) => r.skipped).length;
   int get failed => results.where((r) => !r.success && !r.skipped).length;
+}
+
+/// Result of indexing Flutter packages.
+class FlutterIndexResult {
+  FlutterIndexResult({
+    required this.success,
+    this.error,
+    this.flutterPath,
+    this.version,
+    this.results = const [],
+  });
+
+  final bool success;
+  final String? error;
+  final String? flutterPath;
+  final String? version;
+  final List<PackageIndexResult> results;
+
+  int get indexed => results.where((r) => r.success).length;
+  int get skipped => results.where((r) => r.skipped).length;
+  int get failed => results.where((r) => !r.success && !r.skipped).length;
+
+  /// Total symbols indexed across all packages.
+  int get totalSymbols =>
+      results.fold(0, (sum, r) => sum + (r.symbolCount ?? 0));
 }
 
 

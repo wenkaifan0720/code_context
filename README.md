@@ -430,6 +430,10 @@ analyzer.onFileDartAnalysisCompleted = (filePath, result) {
 };
 ```
 
+## TODO
+
+- Add path regex filter for `find`/`grep` (e.g., `path:/core\/(infra|db)\//`).
+
 ## Related Projects
 
 - [scip-dart](https://github.com/Workiva/scip-dart) - SCIP indexer for Dart
