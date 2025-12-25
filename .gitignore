@@ -12,3 +12,4 @@ pubspec.lock
 # OS
 .DS_Store
 
+.dart_context/

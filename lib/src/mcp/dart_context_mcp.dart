@@ -28,7 +28,8 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
   final Map<String, DartContext> _contexts = {};
 
   /// File watchers for package_config.json per project root.
-  final Map<String, StreamSubscription<FileSystemEvent>> _packageConfigWatchers = {};
+  final Map<String, StreamSubscription<FileSystemEvent>>
+      _packageConfigWatchers = {};
 
   /// Roots marked as stale (package_config changed since last refresh).
   final Set<String> _staleRoots = {};
@@ -519,7 +520,8 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       output.writeln('Project: ${rootPath ?? "(none)"}');
       output.writeln('Status: Not indexed');
       output.writeln('');
-      output.writeln('Use dart_query to trigger indexing, or dart_refresh to reload.');
+      output.writeln(
+          'Use dart_query to trigger indexing, or dart_refresh to reload.');
     } else {
       output.writeln('Project: ${context.projectRoot}');
       output.writeln('Files: ${context.stats['files']}');
@@ -564,7 +566,8 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     output.writeln('');
     output.writeln('### Available Indexes (on disk)');
     output.writeln('');
-    output.writeln('SDK versions: ${sdkVersions.isEmpty ? "(none)" : sdkVersions.join(", ")}');
+    output.writeln(
+        'SDK versions: ${sdkVersions.isEmpty ? "(none)" : sdkVersions.join(", ")}');
     output.writeln('Package indexes: ${packages.length}');
 
     return CallToolResult(
@@ -746,7 +749,8 @@ Set fullReindex=true to ignore cache and rebuild from scratch.''',
     inputSchema: Schema.object(
       properties: {
         'projectRoot': Schema.string(
-          description: 'Path to project. If not provided, uses the first configured root.',
+          description:
+              'Path to project. If not provided, uses the first configured root.',
         ),
         'fullReindex': Schema.bool(
           description: 'Force full re-index, ignoring cache. Default: false.',
@@ -758,7 +762,8 @@ Set fullReindex=true to ignore cache and rebuild from scratch.''',
   /// Tool to show index status.
   static final dartStatusTool = Tool(
     name: 'dart_status',
-    description: '''Show index status: files, symbols, loaded packages, SDK version.
+    description:
+        '''Show index status: files, symbols, loaded packages, SDK version.
 
 Displays:
 - Project index statistics (files, symbols, references)
@@ -773,7 +778,8 @@ Use to verify indexing is complete before querying.''',
     inputSchema: Schema.object(
       properties: {
         'projectRoot': Schema.string(
-          description: 'Path to project. If not provided, uses the first configured root.',
+          description:
+              'Path to project. If not provided, uses the first configured root.',
         ),
       },
     ),
