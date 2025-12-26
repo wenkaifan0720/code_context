@@ -499,6 +499,84 @@ void main() {
         expect(searchResult.symbols, hasLength(2));
       });
     });
+
+    group('edge cases', () {
+      test('handles empty query gracefully', () async {
+        final result = await executor.execute('');
+        expect(result, isA<ErrorResult>());
+        // Empty query error message
+        expect((result as ErrorResult).error, isNotEmpty);
+      });
+
+      test('handles whitespace-only query', () async {
+        final result = await executor.execute('   ');
+        expect(result, isA<ErrorResult>());
+      });
+
+      test('handles unknown command gracefully', () async {
+        final result = await executor.execute('unknowncommand foo');
+        expect(result, isA<ErrorResult>());
+        expect((result as ErrorResult).error, contains('Unknown'));
+      });
+
+      test('def with no matches returns not found', () async {
+        final result = await executor.execute('def NonExistentSymbol');
+        expect(result, isA<NotFoundResult>());
+      });
+
+      test('refs with no matches returns empty', () async {
+        final result = await executor.execute('refs NonExistentSymbol');
+        // Should be SearchResult with empty symbols
+        if (result is SearchResult) {
+          expect(result.symbols, isEmpty);
+        } else if (result is NotFoundResult) {
+          // Also acceptable
+          expect(result, isA<NotFoundResult>());
+        }
+      });
+
+      test('members with non-class returns appropriate result', () async {
+        // If we ask for members of a function, should handle gracefully
+        final result = await executor.execute('members login');
+        // login is a method, not a class - should return empty or not found
+        if (result is SearchResult) {
+          expect(result.symbols, isEmpty);
+        }
+      });
+
+      test('stats command returns index statistics', () async {
+        final result = await executor.execute('stats');
+        expect(result, isA<StatsResult>());
+        final stats = result as StatsResult;
+        expect(stats.stats, containsPair('files', isA<int>()));
+        expect(stats.stats, containsPair('symbols', isA<int>()));
+      });
+
+      test('files command returns all indexed files', () async {
+        final result = await executor.execute('files');
+        expect(result, isA<FilesResult>());
+        final files = result as FilesResult;
+        expect(files.files, isNotEmpty);
+        expect(files.files, contains('lib/auth/service.dart'));
+      });
+    });
+
+    group('qualified names', () {
+      test('which command shows disambiguation options', () async {
+        // which shows all matches for a name
+        final result = await executor.execute('which login');
+        expect(result, isA<WhichResult>());
+        final which = result as WhichResult;
+        expect(which.matches, isNotEmpty);
+      });
+
+      test('def with specific name finds definition', () async {
+        // Find definition of a specific method
+        final result = await executor.execute('def login');
+        // Should find at least one login method
+        expect(result, isA<DefinitionResult>());
+      });
+    });
   });
 }
 

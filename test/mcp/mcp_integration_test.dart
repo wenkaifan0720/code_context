@@ -208,6 +208,75 @@ class MyClass {
         }
         expect(result.textContent, contains('Hello'));
       });
+
+      test('dart_query which shows disambiguation', () async {
+        final result = await env.callTool('dart_query', {'query': 'which main'});
+
+        if (result.isError == true) {
+          fail('Query failed: ${result.textContent}');
+        }
+        expect(result.textContent, contains('main'));
+      });
+
+      test('dart_query impls returns implementations', () async {
+        final result = await env.callTool('dart_query', {'query': 'impls MyClass'});
+
+        // May be empty if no implementations exist
+        expect(result.isError, isNot(true));
+      });
+
+      test('dart_query hierarchy returns type hierarchy', () async {
+        final result = await env.callTool('dart_query', {'query': 'hierarchy MyClass'});
+
+        // Returns hierarchy info
+        expect(result.isError, isNot(true));
+        expect(result.textContent, contains('MyClass'));
+      });
+    });
+
+    group('Status and Refresh', () {
+      test('dart_status includes version', () async {
+        final result = await env.callTool('dart_status', {});
+
+        expect(result.textContent, contains('Dart Context Status'));
+        // Version should be included
+        expect(result.textContent, contains('v'));
+      });
+
+      test('dart_status shows recommendations section', () async {
+        final result = await env.callTool('dart_status', {});
+
+        // Should have recommendations or available indexes
+        expect(result.textContent, contains('Available Indexes'));
+      });
+
+      test('dart_refresh with fullReindex flag works', () async {
+        final result = await env.callTool('dart_refresh', {
+          'fullReindex': true,
+        });
+
+        // Should return some response
+        expect(result.textContent.isNotEmpty, isTrue);
+      });
+    });
+
+    group('Error Handling', () {
+      test('dart_query with invalid syntax returns result', () async {
+        final result = await env.callTool('dart_query', {
+          'query': 'invalidcommand xyz',
+        });
+
+        // Invalid commands return a result with error info in the text
+        expect(result.textContent, isNotEmpty);
+        expect(result.textContent, contains('Unknown'));
+      });
+
+      test('dart_index_deps without pubspec.lock fails gracefully', () async {
+        final result = await env.callTool('dart_index_deps', {});
+
+        expect(result.isError, isTrue);
+        expect(result.textContent, contains('pubspec.lock'));
+      });
     });
   });
 }

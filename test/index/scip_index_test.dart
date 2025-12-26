@@ -455,5 +455,182 @@ void main() {
       expect(occ.location, 'lib/foo.dart:11:6'); // 1-based for display
     });
   });
+
+  group('ScipIndex Edge Cases', () {
+    group('empty index', () {
+      test('returns empty results for all queries', () {
+        final index = ScipIndex.empty(projectRoot: '/test');
+
+        expect(index.findSymbols('*'), isEmpty);
+        expect(index.getSymbol('any'), isNull);
+        expect(index.findReferences('any'), isEmpty);
+        expect(index.getDocument('any.dart'), isNull);
+        expect(index.files, isEmpty);
+      });
+
+      test('stats show zero values', () {
+        final index = ScipIndex.empty(projectRoot: '/test');
+
+        expect(index.stats['files'], 0);
+        expect(index.stats['symbols'], 0);
+        expect(index.stats['references'], 0);
+      });
+
+      test('accepts custom sourceRoot', () {
+        final index = ScipIndex.empty(
+          projectRoot: '/cache/pkg',
+          sourceRoot: '/actual/source',
+        );
+
+        expect(index.projectRoot, '/cache/pkg');
+        expect(index.sourceRoot, '/actual/source');
+      });
+    });
+
+    group('sourceRoot', () {
+      test('defaults to projectRoot when not specified', () {
+        final index = ScipIndex.empty(projectRoot: '/my/project');
+        expect(index.sourceRoot, '/my/project');
+      });
+
+      test('uses separate sourceRoot for external packages', () {
+        final raw = scip.Index(
+          metadata: scip.Metadata(projectRoot: 'file:///cache/pkg'),
+          documents: [
+            scip.Document(
+              relativePath: 'lib/src.dart',
+              language: 'Dart',
+              symbols: [],
+              occurrences: [],
+            ),
+          ],
+        );
+
+        final index = ScipIndex.fromScipIndex(
+          raw,
+          projectRoot: '/cache/pkg',
+          sourceRoot: '/pub-cache/hosted/pub.dev/pkg-1.0.0',
+        );
+
+        expect(index.projectRoot, '/cache/pkg');
+        expect(index.sourceRoot, '/pub-cache/hosted/pub.dev/pkg-1.0.0');
+      });
+    });
+
+    group('pattern matching', () {
+      late ScipIndex index;
+
+      setUp(() {
+        final raw = scip.Index(
+          metadata: scip.Metadata(projectRoot: 'file:///test'),
+          documents: [
+            scip.Document(
+              relativePath: 'lib/main.dart',
+              language: 'Dart',
+              symbols: [
+                scip.SymbolInformation(
+                  symbol: 'test . . . lib/main.dart/AuthService#',
+                  kind: scip.SymbolInformation_Kind.Class,
+                  displayName: 'AuthService',
+                ),
+                scip.SymbolInformation(
+                  symbol: 'test . . . lib/main.dart/UserService#',
+                  kind: scip.SymbolInformation_Kind.Class,
+                  displayName: 'UserService',
+                ),
+                scip.SymbolInformation(
+                  symbol: 'test . . . lib/main.dart/login#',
+                  kind: scip.SymbolInformation_Kind.Method,
+                  displayName: 'login',
+                ),
+              ],
+              occurrences: [],
+            ),
+          ],
+        );
+        index = ScipIndex.fromScipIndex(raw, projectRoot: '/test');
+      });
+
+      test('glob pattern matches multiple symbols', () {
+        final results = index.findSymbols('*Service');
+        expect(results.length, 2);
+        expect(results.map((s) => s.name), containsAll(['AuthService', 'UserService']));
+      });
+
+      test('literal match finds exact names', () {
+        expect(index.findSymbols('login'), hasLength(1));
+        expect(index.findSymbols('AuthService'), hasLength(1));
+      });
+
+      test('? matches single character', () {
+        final results = index.findSymbols('logi?');
+        expect(results.length, 1);
+        expect(results.first.name, 'login');
+      });
+    });
+
+    group('getSource', () {
+      test('returns null for non-existent file', () async {
+        final index = ScipIndex.empty(projectRoot: '/nonexistent');
+        final source = await index.getSource('any.symbol');
+        expect(source, isNull);
+      });
+    });
+
+    group('grep', () {
+      test('returns empty for non-existent files', () async {
+        final index = ScipIndex.empty(projectRoot: '/nonexistent');
+        final results = await index.grep(RegExp('pattern'));
+        expect(results, isEmpty);
+      });
+    });
+
+    group('qualified names', () {
+      late ScipIndex index;
+
+      setUp(() {
+        final raw = scip.Index(
+          metadata: scip.Metadata(projectRoot: 'file:///test'),
+          documents: [
+            scip.Document(
+              relativePath: 'lib/main.dart',
+              language: 'Dart',
+              symbols: [
+                scip.SymbolInformation(
+                  symbol: 'test . . . lib/main.dart/MyClass#',
+                  kind: scip.SymbolInformation_Kind.Class,
+                  displayName: 'MyClass',
+                ),
+                scip.SymbolInformation(
+                  symbol: 'test . . . lib/main.dart/MyClass#doWork().',
+                  kind: scip.SymbolInformation_Kind.Method,
+                  displayName: 'doWork',
+                ),
+                scip.SymbolInformation(
+                  symbol: 'test . . . lib/main.dart/OtherClass#doWork().',
+                  kind: scip.SymbolInformation_Kind.Method,
+                  displayName: 'doWork',
+                ),
+              ],
+              occurrences: [],
+            ),
+          ],
+        );
+        index = ScipIndex.fromScipIndex(raw, projectRoot: '/test');
+      });
+
+      test('findQualified resolves Class.member', () {
+        final results = index.findQualified('MyClass', 'doWork');
+        expect(results, isNotEmpty);
+        expect(results.first.name, 'doWork');
+        expect(results.first.symbol, contains('MyClass'));
+      });
+
+      test('findQualified returns empty for non-matching pair', () {
+        final results = index.findQualified('NonExistent', 'doWork');
+        expect(results, isEmpty);
+      });
+    });
+  });
 }
 

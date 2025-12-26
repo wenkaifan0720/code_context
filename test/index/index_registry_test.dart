@@ -376,5 +376,181 @@ void main() {
         );
       });
     });
+
+    group('findSymbols deduplication', () {
+      test('deduplicates symbols from multiple indexes', () {
+        // Create external index with same-named symbol
+        final extIndex = ScipIndex.empty(projectRoot: '/ext');
+        extIndex.updateDocument(
+          scip.Document(
+            relativePath: 'lib/ext.dart',
+            language: 'Dart',
+            symbols: [
+              scip.SymbolInformation(
+                symbol: 'ext . . . lib/ext.dart/Widget#',
+                kind: scip.SymbolInformation_Kind.Class,
+                displayName: 'Widget',
+              ),
+            ],
+            occurrences: [],
+          ),
+        );
+
+        final extIndex2 = ScipIndex.empty(projectRoot: '/ext2');
+        extIndex2.updateDocument(
+          scip.Document(
+            relativePath: 'lib/ext2.dart',
+            language: 'Dart',
+            symbols: [
+              scip.SymbolInformation(
+                symbol: 'ext . . . lib/ext.dart/Widget#', // Same symbol ID
+                kind: scip.SymbolInformation_Kind.Class,
+                displayName: 'Widget',
+              ),
+            ],
+            occurrences: [],
+          ),
+        );
+
+        final reg = IndexRegistry.withIndexes(
+          projectIndex: projectIndex,
+          packageIndexes: {
+            'ext1-1.0.0': extIndex,
+            'ext2-1.0.0': extIndex2,
+          },
+        );
+
+        final results = reg.findSymbols('Widget');
+        // Should not have duplicates - same symbol ID appears in two packages
+        final uniqueSymbols = results.map((s) => s.symbol).toSet();
+        expect(uniqueSymbols.length, results.length);
+      });
+    });
+
+    group('cross-index helpers', () {
+      late IndexRegistry regWithExternal;
+
+      setUp(() {
+        // Create external index with symbols
+        final extIndex = ScipIndex.empty(projectRoot: '/ext');
+        extIndex.updateDocument(
+          scip.Document(
+            relativePath: 'lib/external.dart',
+            language: 'Dart',
+            symbols: [
+              scip.SymbolInformation(
+                symbol: 'ext . . . lib/external.dart/ExternalClass#',
+                kind: scip.SymbolInformation_Kind.Class,
+                displayName: 'ExternalClass',
+              ),
+            ],
+            occurrences: [
+              scip.Occurrence(
+                symbol: 'ext . . . lib/external.dart/ExternalClass#',
+                range: [5, 0, 5, 12],
+                symbolRoles: scip.SymbolRole.Definition.value,
+              ),
+            ],
+          ),
+        );
+
+        regWithExternal = IndexRegistry.withIndexes(
+          projectIndex: projectIndex,
+          packageIndexes: {'ext-1.0.0': extIndex},
+        );
+      });
+
+      test('getSymbol finds symbols across all indexes', () {
+        final result = regWithExternal.getSymbol(
+          'ext . . . lib/external.dart/ExternalClass#',
+        );
+        expect(result, isNotNull);
+        expect(result!.name, 'ExternalClass');
+      });
+
+      test('getSymbol returns null for non-existent symbol', () {
+        final result = regWithExternal.getSymbol('nonexistent');
+        expect(result, isNull);
+      });
+
+      test('findOwningIndex returns correct index for symbol', () {
+        final projectSymbol = 'test . . . lib/app.dart/MyWidget#';
+        final extSymbol = 'ext . . . lib/external.dart/ExternalClass#';
+
+        final projectOwner = regWithExternal.findOwningIndex(projectSymbol);
+        final extOwner = regWithExternal.findOwningIndex(extSymbol);
+
+        expect(projectOwner, isNotNull);
+        expect(extOwner, isNotNull);
+        expect(projectOwner, isNot(equals(extOwner)));
+      });
+
+      test('allIndexes returns project + packages', () {
+        final all = regWithExternal.allIndexes.toList();
+        expect(all.length, 2); // project + 1 package
+      });
+
+      test('findAllReferences aggregates from all indexes', () {
+        // Add reference in project to external symbol
+        projectIndex.updateDocument(
+          scip.Document(
+            relativePath: 'lib/use.dart',
+            language: 'Dart',
+            symbols: [],
+            occurrences: [
+              scip.Occurrence(
+                symbol: 'ext . . . lib/external.dart/ExternalClass#',
+                range: [10, 5, 10, 17],
+                symbolRoles: 0, // reference
+              ),
+            ],
+          ),
+        );
+
+        final refs = regWithExternal.findAllReferences(
+          'ext . . . lib/external.dart/ExternalClass#',
+        );
+        
+        // Should find the definition + the reference
+        expect(refs.length, greaterThanOrEqualTo(1));
+      });
+    });
+
+    group('scope filtering', () {
+      test('project scope only searches project index', () {
+        final extIndex = ScipIndex.empty(projectRoot: '/ext');
+        extIndex.updateDocument(
+          scip.Document(
+            relativePath: 'lib/ext.dart',
+            language: 'Dart',
+            symbols: [
+              scip.SymbolInformation(
+                symbol: 'ext . . . lib/ext.dart/UniqueExternal#',
+                kind: scip.SymbolInformation_Kind.Class,
+                displayName: 'UniqueExternal',
+              ),
+            ],
+            occurrences: [],
+          ),
+        );
+
+        final reg = IndexRegistry.withIndexes(
+          projectIndex: projectIndex,
+          packageIndexes: {'ext-1.0.0': extIndex},
+        );
+
+        final projectOnly = reg.findSymbols(
+          'UniqueExternal',
+          scope: IndexScope.project,
+        );
+        final withLoaded = reg.findSymbols(
+          'UniqueExternal',
+          scope: IndexScope.projectAndLoaded,
+        );
+
+        expect(projectOnly, isEmpty);
+        expect(withLoaded, hasLength(1));
+      });
+    });
   });
 }
