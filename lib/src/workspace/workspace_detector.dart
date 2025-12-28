@@ -264,6 +264,27 @@ Future<List<WorkspacePackage>> _discoverMelosPackages(
     // Melos uses glob patterns like "packages/**"
     final glob = Glob(pattern);
 
+    // For patterns with /**, also check if the base directory itself has a pubspec
+    // e.g., "flutterflow/**" should also check "flutterflow/"
+    if (pattern.endsWith('/**')) {
+      final basePattern = pattern.substring(0, pattern.length - 3);
+      final basePath = '$rootPath/$basePattern';
+      final basePubspec = File('$basePath/pubspec.yaml');
+      if (await basePubspec.exists() &&
+          !seenPaths.contains(basePath) &&
+          !_isIgnored(basePattern, config.ignoreGlobs)) {
+        seenPaths.add(basePath);
+        final name = await _getPackageName(basePubspec);
+        if (name != null) {
+          packages.add(WorkspacePackage(
+            name: name,
+            relativePath: basePattern,
+            absolutePath: basePath,
+          ));
+        }
+      }
+    }
+
     await for (final entity in glob.list(root: rootPath)) {
       if (entity is! Directory) continue;
 
@@ -304,6 +325,26 @@ List<WorkspacePackage> _discoverMelosPackagesSync(
   for (final pattern in config.packageGlobs) {
     final glob = Glob(pattern);
 
+    // For patterns with /**, also check if the base directory itself has a pubspec
+    if (pattern.endsWith('/**')) {
+      final basePattern = pattern.substring(0, pattern.length - 3);
+      final basePath = '$rootPath/$basePattern';
+      final basePubspec = File('$basePath/pubspec.yaml');
+      if (basePubspec.existsSync() &&
+          !seenPaths.contains(basePath) &&
+          !_isIgnored(basePattern, config.ignoreGlobs)) {
+        seenPaths.add(basePath);
+        final name = _getPackageNameSync(basePubspec);
+        if (name != null) {
+          packages.add(WorkspacePackage(
+            name: name,
+            relativePath: basePattern,
+            absolutePath: basePath,
+          ));
+        }
+      }
+    }
+
     for (final entity in glob.listSync(root: rootPath)) {
       if (entity is! Directory) continue;
 
@@ -331,7 +372,27 @@ List<WorkspacePackage> _discoverMelosPackagesSync(
   return packages;
 }
 
+/// Directories that should always be excluded from workspace package discovery.
+/// These are Flutter build artifacts, symlinks, and cached dependencies.
+const _alwaysIgnoredPatterns = [
+  '.symlinks',
+  '.plugin_symlinks',
+  'ephemeral',
+  'build',
+  '.dart_tool',
+  '.pub-cache',
+  'node_modules',
+];
+
 bool _isIgnored(String path, List<String> ignoreGlobs) {
+  // Check always-ignored patterns first
+  for (final ignored in _alwaysIgnoredPatterns) {
+    if (path.contains('/$ignored/') || path.contains('/$ignored')) {
+      return true;
+    }
+  }
+
+  // Check user-defined ignore globs
   for (final pattern in ignoreGlobs) {
     final glob = Glob(pattern);
     if (glob.matches(path)) return true;
@@ -411,6 +472,9 @@ Future<List<WorkspacePackage>> _discoverPubWorkspacePackages(
   // Simple path (not a glob)
   if (!pattern.contains('*')) {
     final pkgPath = '$rootPath/$pattern';
+    // Skip ignored paths
+    if (_isIgnored(pattern, [])) return packages;
+
     final pubspecFile = File('$pkgPath/pubspec.yaml');
     if (await pubspecFile.exists()) {
       final name = await _getPackageName(pubspecFile);
@@ -430,13 +494,17 @@ Future<List<WorkspacePackage>> _discoverPubWorkspacePackages(
   await for (final entity in glob.list(root: rootPath)) {
     if (entity is! Directory) continue;
 
+    final relativePath = entity.path.substring(rootPath.length + 1);
+
+    // Skip ignored paths
+    if (_isIgnored(relativePath, [])) continue;
+
     final pubspecFile = File('${entity.path}/pubspec.yaml');
     if (!await pubspecFile.exists()) continue;
 
     final name = await _getPackageName(pubspecFile);
     if (name == null) continue;
 
-    final relativePath = entity.path.substring(rootPath.length + 1);
     packages.add(WorkspacePackage(
       name: name,
       relativePath: relativePath,
@@ -453,6 +521,9 @@ List<WorkspacePackage> _discoverPubWorkspacePackagesSync(
 
   if (!pattern.contains('*')) {
     final pkgPath = '$rootPath/$pattern';
+    // Skip ignored paths
+    if (_isIgnored(pattern, [])) return packages;
+
     final pubspecFile = File('$pkgPath/pubspec.yaml');
     if (pubspecFile.existsSync()) {
       final name = _getPackageNameSync(pubspecFile);
@@ -471,13 +542,17 @@ List<WorkspacePackage> _discoverPubWorkspacePackagesSync(
   for (final entity in glob.listSync(root: rootPath)) {
     if (entity is! Directory) continue;
 
+    final relativePath = entity.path.substring(rootPath.length + 1);
+
+    // Skip ignored paths
+    if (_isIgnored(relativePath, [])) continue;
+
     final pubspecFile = File('${entity.path}/pubspec.yaml');
     if (!pubspecFile.existsSync()) continue;
 
     final name = _getPackageNameSync(pubspecFile);
     if (name == null) continue;
 
-    final relativePath = entity.path.substring(rootPath.length + 1);
     packages.add(WorkspacePackage(
       name: name,
       relativePath: relativePath,
@@ -574,4 +649,3 @@ Map<String, dynamic> workspaceToJson(WorkspaceInfo workspace) {
 String workspaceToJsonString(WorkspaceInfo workspace) {
   return const JsonEncoder.withIndent('  ').convert(workspaceToJson(workspace));
 }
-

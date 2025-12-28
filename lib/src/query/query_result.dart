@@ -551,6 +551,9 @@ class StatsResult extends QueryResult {
     final buffer = StringBuffer();
     buffer.writeln('## Index Statistics');
     buffer.writeln('');
+    if (stats.containsKey('packages')) {
+      buffer.writeln('- Packages: ${stats['packages']}');
+    }
     buffer.writeln('- Files: ${stats['files'] ?? 0}');
     buffer.writeln('- Symbols: ${stats['symbols'] ?? 0}');
     buffer.writeln('- References: ${stats['references'] ?? 0}');

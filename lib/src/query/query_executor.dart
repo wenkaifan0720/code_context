@@ -1227,19 +1227,30 @@ class QueryExecutor {
     final projectResults = <SymbolInfo>[];
     final externalResults = <SymbolInfo>[];
 
+    // Get all local indexes to search (project + local workspace packages)
+    final allLocalIndexes = <ScipIndex>[index];
+    if (registry != null) {
+      allLocalIndexes.addAll(registry!.localIndexes.values);
+    }
+
     try {
       // Use appropriate search method based on pattern type
       if (pattern.type == PatternType.fuzzy) {
         // Fuzzy uses edit distance matching
-        projectResults.addAll(index.findSymbolsFuzzy(pattern.pattern));
-        // Note: fuzzy search not implemented for registry yet
+        for (final idx in allLocalIndexes) {
+          projectResults.addAll(idx.findSymbolsFuzzy(pattern.pattern));
+        }
+        // Note: fuzzy search not implemented for registry external indexes yet
       } else if (pattern.type == PatternType.regex) {
         // Regex searches all symbols
         final regex = pattern.toRegExp();
-        projectResults.addAll(index.allSymbols.where((sym) {
-          return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
-        }));
-        // Also search in registry
+        // Search all local indexes (project + workspace packages)
+        for (final idx in allLocalIndexes) {
+          projectResults.addAll(idx.allSymbols.where((sym) {
+            return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
+          }));
+        }
+        // Also search in external registry (SDK, pub packages)
         if (registry != null) {
           for (final pkgIndex in registry!.packageIndexes.values) {
             externalResults.addAll(pkgIndex.allSymbols.where((sym) {
@@ -1254,7 +1265,9 @@ class QueryExecutor {
         }
       } else if (pattern.type == PatternType.glob) {
         // Glob uses the existing findSymbols
-        projectResults.addAll(index.findSymbols(query.target));
+        for (final idx in allLocalIndexes) {
+          projectResults.addAll(idx.findSymbols(query.target));
+        }
         // Also search in registry
         if (registry != null) {
           externalResults.addAll(registry!.findSymbols(query.target));
@@ -1262,9 +1275,12 @@ class QueryExecutor {
       } else {
         // Literal - exact match on name
         final regex = pattern.toRegExp();
-        projectResults.addAll(index.allSymbols.where((sym) {
-          return regex.hasMatch(sym.name);
-        }));
+        // Search all local indexes
+        for (final idx in allLocalIndexes) {
+          projectResults.addAll(idx.allSymbols.where((sym) {
+            return regex.hasMatch(sym.name);
+          }));
+        }
         // Also search in registry
         if (registry != null) {
           for (final pkgIndex in registry!.packageIndexes.values) {
@@ -1724,10 +1740,38 @@ class QueryExecutor {
   }
 
   Future<QueryResult> _listFiles() async {
+    // In workspace mode, aggregate files from all local packages
+    if (registry != null && registry!.localIndexes.isNotEmpty) {
+      final allFiles = <String>[];
+      for (final idx in registry!.localIndexes.values) {
+        allFiles.addAll(idx.files);
+      }
+      return FilesResult(allFiles.toList()..sort());
+    }
     return FilesResult(index.files.toList()..sort());
   }
 
   Future<QueryResult> _getStats() async {
+    // In workspace mode, aggregate stats from all local packages
+    if (registry != null && registry!.localIndexes.isNotEmpty) {
+      var totalFiles = 0;
+      var totalSymbols = 0;
+      var totalReferences = 0;
+
+      for (final idx in registry!.localIndexes.values) {
+        final stats = idx.stats;
+        totalFiles += stats['files'] ?? 0;
+        totalSymbols += stats['symbols'] ?? 0;
+        totalReferences += stats['references'] ?? 0;
+      }
+
+      return StatsResult({
+        'files': totalFiles,
+        'symbols': totalSymbols,
+        'references': totalReferences,
+        'packages': registry!.localIndexes.length,
+      });
+    }
     return StatsResult(index.stats);
   }
 }
