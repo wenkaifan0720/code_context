@@ -424,7 +424,7 @@ class ParsedPattern {
 
   /// Parse a pattern string into structured form.
   factory ParsedPattern.parse(String input,
-      {bool defaultCaseSensitive = true}) {
+      {bool defaultCaseSensitive = true,}) {
     var caseSensitive = defaultCaseSensitive;
 
     // Check for regex pattern: /pattern/ or /pattern/i

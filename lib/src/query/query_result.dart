@@ -723,13 +723,13 @@ class AggregatedReferencesResult extends QueryResult {
 
     final buffer = StringBuffer();
     buffer.writeln(
-        '## References to "$query" (${symbolRefs.length} symbols, $count total refs)');
+        '## References to "$query" (${symbolRefs.length} symbols, $count total refs)',);
     buffer.writeln('');
 
     for (final sr in symbolRefs) {
       final container = sr.container != null ? '${sr.container}.' : '';
       buffer.writeln(
-          '### $container${sr.symbol.name} [${sr.symbol.kindString}] (${sr.references.length} refs)');
+          '### $container${sr.symbol.name} [${sr.symbol.kindString}] (${sr.references.length} refs)',);
       if (sr.symbol.file != null) {
         buffer.writeln('Defined in: ${sr.symbol.file}');
       }

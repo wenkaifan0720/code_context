@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-01-XX
+
+### Changed
+
+#### API Simplification
+- **Unified package registry** - Merged `IndexRegistry` and `WorkspaceRegistry` into `PackageRegistry`
+- **Simplified package discovery** - Replaced `detectWorkspace()` with `discoverPackages()` that recursively finds all `pubspec.yaml` files
+- **Removed deprecated APIs**:
+  - `IndexRegistry` typedef (use `PackageRegistry`)
+  - `WorkspaceInfo`, `WorkspaceType`, `MelosConfig` classes
+  - `detectWorkspace()`, `detectWorkspaceSync()` functions
+  - `fromProjectIndex()`, `withIndexes()` factory constructors
+  - `unloadAll()` method
+
+#### Testing API
+- Added `PackageRegistry.forTesting()` factory for unit tests
+- Added `LocalPackageIndex.forTesting()` constructor for tests without real indexer
+
+### Fixed
+- Fixed duplicate search results in `find` queries for mono repos
+- Fixed `refs` queries returning 0 results due to symbol kind comparison bug
+- Made mono repo indexing resilient to packages missing `package_config.json`
+
+### Improved
+- Applied 48 lint fixes (trailing commas, conditional assignments)
+- Synced version between `pubspec.yaml` and `version.dart`
+
+---
+
 ## [0.1.0] - 2025-01-XX
 
 ### Added
@@ -14,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Index caching** for ~35x faster startup times (300ms vs 10s)
 - **Query DSL** for semantic code navigation
 - **Signature extraction** using the Dart analyzer for accurate signatures
-- **Cross-package queries** via pre-indexed SDK/packages with IndexRegistry
+- **Cross-package queries** via pre-indexed SDK/packages with PackageRegistry
 
 #### Query Commands
 - `def <symbol>` - Find symbol definitions
@@ -83,16 +112,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dart_status` - Show index status (files, symbols, loaded packages, workspace info)
 - `bin/mcp_server.dart` - Ready-to-use MCP server for Cursor integration
 
-#### Mono Repo / Workspace Support
-- **Workspace detection** - Automatically detects Melos and Dart 3.0+ pub workspaces
-- **Cross-package queries** - Query symbols across local workspace packages
-- **Unified file watching** - Single watcher at workspace root for all packages
-- **Workspace registry** - Central location for local package indexes
+#### Mono Repo Support
+- **Package discovery** - Recursively finds all `pubspec.yaml` files in any directory
+- **Cross-package queries** - Query symbols across local packages
+- **Unified file watching** - Single watcher at root for all packages
+- **Package registry** - Central location for local and external package indexes
 
-#### CLI Workspace Commands
-- `workspace info` - Show detected workspace type and packages
-- `workspace index` - Index all packages in the workspace
-- `workspace sync` - Sync package indexes to workspace registry
+#### CLI Commands
+- `list-packages [path]` - List discovered packages in a directory
 
 #### Cache Infrastructure
 - `CachePaths` - Centralized cache path management

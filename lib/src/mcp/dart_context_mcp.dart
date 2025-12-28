@@ -332,7 +332,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       }
       output.writeln('');
       output.writeln(
-          'Indexes saved to: ${registry.globalCachePath}/flutter/${result.version}/');
+          'Indexes saved to: ${registry.globalCachePath}/flutter/${result.version}/',);
 
       return CallToolResult(
         content: [TextContent(text: output.toString())],
@@ -545,7 +545,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       output.writeln('Status: Not indexed');
       output.writeln('');
       output.writeln(
-          'Use dart_query to trigger indexing, or dart_refresh to reload.');
+          'Use dart_query to trigger indexing, or dart_refresh to reload.',);
     } else {
       output.writeln('Project: ${context.rootPath}');
       output.writeln('Files: ${context.stats['files']}');
@@ -577,7 +577,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
         }
         if (registry.loadedFlutterVersion != null) {
           output.writeln(
-              'Flutter: ${registry.loadedFlutterVersion} (${registry.flutterPackages.length} packages)');
+              'Flutter: ${registry.loadedFlutterVersion} (${registry.flutterPackages.length} packages)',);
         }
 
         // Show hosted packages
@@ -589,7 +589,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
           }
           if (registry.hostedPackages.length > 5) {
             output.writeln(
-                '  ... and ${registry.hostedPackages.length - 5} more');
+                '  ... and ${registry.hostedPackages.length - 5} more',);
           }
         }
         
@@ -618,7 +618,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       } else {
         output.writeln('External indexes: Not loaded');
         output.writeln(
-            'Use dart_index_flutter and dart_index_deps to enable cross-package queries.');
+            'Use dart_index_flutter and dart_index_deps to enable cross-package queries.',);
       }
     }
 
@@ -635,9 +635,9 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     output.writeln('### Available Indexes (on disk)');
     output.writeln('');
     output.writeln(
-        'SDK versions: ${sdkVersions.isEmpty ? "(none)" : sdkVersions.join(", ")}');
+        'SDK versions: ${sdkVersions.isEmpty ? "(none)" : sdkVersions.join(", ")}',);
     output.writeln(
-        'Flutter versions: ${flutterVersions.isEmpty ? "(none)" : flutterVersions.join(", ")}');
+        'Flutter versions: ${flutterVersions.isEmpty ? "(none)" : flutterVersions.join(", ")}',);
     output.writeln('Package indexes: ${packages.length}');
 
     // Check for Flutter project and give hints
@@ -656,9 +656,9 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
         final hasFlutterIndexes = flutterVersions.isNotEmpty;
         if (isFlutter && !hasFlutterIndexes) {
           output.writeln(
-              '⚠️ Flutter project detected but Flutter SDK not indexed.');
+              '⚠️ Flutter project detected but Flutter SDK not indexed.',);
           output.writeln(
-              '   Run: `dart_index_flutter` to enable widget hierarchy queries.');
+              '   Run: `dart_index_flutter` to enable widget hierarchy queries.',);
           output.writeln('');
         }
 
@@ -675,9 +675,9 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
                 .writeln('📦 ${missingDeps.length} dependencies not indexed:');
             final toShow = missingDeps.take(5).map((d) => d.name).toList();
             output.writeln(
-                '   ${toShow.join(", ")}${missingDeps.length > 5 ? " ..." : ""}');
+                '   ${toShow.join(", ")}${missingDeps.length > 5 ? " ..." : ""}',);
             output.writeln(
-                '   Run: `dart_index_deps` to index all dependencies.');
+                '   Run: `dart_index_deps` to index all dependencies.',);
             output.writeln('');
           } else if (deps.isNotEmpty) {
             output.writeln('✓ All ${deps.length} dependencies are indexed.');
@@ -697,7 +697,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
           if (currentSdkVersion != null &&
               !sdkVersions.contains(currentSdkVersion)) {
             output.writeln(
-                '⚠️ Current SDK ($currentSdkVersion) differs from indexed: ${sdkVersions.join(", ")}');
+                '⚠️ Current SDK ($currentSdkVersion) differs from indexed: ${sdkVersions.join(", ")}',);
             output.writeln('   Consider re-indexing for accurate results.');
           }
         }

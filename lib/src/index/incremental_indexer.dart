@@ -612,7 +612,7 @@ class IncrementalScipIndexer {
       // Store as (line, column) -> endLine (0-indexed)
       declarationEnds[(location.lineNumber - 1, location.columnNumber - 1)] =
           endLocation.lineNumber - 1;
-    }));
+    }),);
 
     return occurrences.map((occ) {
       // Only enhance definition occurrences that don't have enclosingRange

@@ -365,9 +365,7 @@ class QueryExecutor {
       signature = await signatureProvider!(sym.symbol);
     }
 
-    if (signature == null) {
-      signature = await _extractSignatureFromSource(sym, def);
-    }
+    signature ??= await _extractSignatureFromSource(sym, def);
 
     if (signature == null) {
       return NotFoundResult('Could not extract signature for "${sym.name}"');
@@ -562,7 +560,7 @@ class QueryExecutor {
   /// Searches in the project index first, then in external indexes
   /// (SDK, packages) if a registry is available.
   List<SymbolInfo> _findMatchingSymbols(ScipQuery query) {
-    List<SymbolInfo> _sorted(List<SymbolInfo> symbols) {
+    List<SymbolInfo> sorted0(List<SymbolInfo> symbols) {
       const priority = {
         'class': 0,
         'mixin': 0,
@@ -604,11 +602,11 @@ class QueryExecutor {
     if (query.isQualified) {
       // Qualified lookup: Class.member
       if (registry != null) {
-        return _sorted(
+        return sorted0(
           registry!.findQualified(query.container!, query.memberName).toList(),
         );
       }
-      return _sorted(
+      return sorted0(
         index.findQualified(query.container!, query.memberName).toList(),
       );
     } else {
@@ -627,7 +625,7 @@ class QueryExecutor {
         }
       }
 
-      return _sorted(results);
+      return sorted0(results);
     }
   }
 
@@ -1122,9 +1120,7 @@ class QueryExecutor {
     }
 
     // Fallback: extract from source heuristically
-    if (signature == null) {
-      signature = await _extractSignatureFromSource(sym, def);
-    }
+    signature ??= await _extractSignatureFromSource(sym, def);
 
     if (signature == null) {
       return NotFoundResult('Could not extract signature for "${query.target}"');
@@ -1249,14 +1245,14 @@ class QueryExecutor {
         for (final idx in allLocalIndexes) {
           projectResults.addAll(idx.allSymbols.where((sym) {
             return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
-          }));
+          }),);
         }
         // Also search in all external packages (SDK, hosted, Flutter, git)
         if (registry != null) {
           for (final idx in registry!.allExternalIndexes) {
             externalResults.addAll(idx.allSymbols.where((sym) {
               return regex.hasMatch(sym.name) || regex.hasMatch(sym.symbol);
-            }));
+            }),);
           }
         }
       } else if (pattern.type == PatternType.glob) {
@@ -1277,14 +1273,14 @@ class QueryExecutor {
         for (final idx in allLocalIndexes) {
           projectResults.addAll(idx.allSymbols.where((sym) {
             return regex.hasMatch(sym.name);
-          }));
+          }),);
         }
         // Also search in all external packages (SDK, hosted, Flutter, git)
         if (registry != null) {
           for (final idx in registry!.allExternalIndexes) {
             externalResults.addAll(idx.allSymbols.where((sym) {
               return regex.hasMatch(sym.name);
-            }));
+            }),);
           }
         }
       }

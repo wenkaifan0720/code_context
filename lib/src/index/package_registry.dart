@@ -46,7 +46,8 @@ class LocalPackageIndex {
   /// Get the indexer (throws if this is a test instance).
   IncrementalScipIndexer get indexer {
     if (_indexer == null) {
-      throw StateError('This LocalPackageIndex was created for testing without an indexer');
+      throw StateError(
+          'This LocalPackageIndex was created for testing without an indexer',);
     }
     return _indexer!;
   }
@@ -213,11 +214,9 @@ class PackageRegistry {
     return registry;
   }
 
-
   /// The root path for this workspace/project.
   final String rootPath;
 
-  // ignore: unused_field
   final String _globalCachePath;
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -357,7 +356,7 @@ class PackageRegistry {
 
     // Save metadata for successfully initialized packages
     await _saveMetadata(
-        packages.where((p) => !skipped.contains(p.name)).toList());
+        packages.where((p) => !skipped.contains(p.name)).toList(),);
 
     if (skipped.isNotEmpty) {
       onProgress?.call(
@@ -454,7 +453,7 @@ class PackageRegistry {
 
   /// Load Flutter package index from cache.
   Future<ScipIndex?> loadFlutterPackage(
-      String version, String packageName) async {
+      String version, String packageName,) async {
     final key = '$version/$packageName';
 
     if (_flutterPackages.containsKey(key)) {
@@ -754,7 +753,7 @@ class PackageRegistry {
             ref: ref,
             packageName: packageName,
             sourceRoot: index.sourceRoot,
-          ));
+          ),);
         }
       }
     }
@@ -931,7 +930,7 @@ class PackageRegistry {
         maxPerFile: maxPerFile,
         multiline: multiline,
         onlyMatching: onlyMatching,
-      ));
+      ),);
     }
 
     // Always search local packages
@@ -1079,7 +1078,7 @@ class PackageRegistry {
           .map((p) => {
                 'name': p.name,
                 'relativePath': p.relativePath,
-              })
+              },)
           .toList(),
       'updatedAt': DateTime.now().toIso8601String(),
       'dartContextVersion': dartContextVersion,

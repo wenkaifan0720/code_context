@@ -155,7 +155,7 @@ List<ResolvedPackage> parsePackageConfigSync(String projectPath) {
 
 /// Resolve a package entry from package_config.json.
 ResolvedPackage? _resolvePackage(
-    String name, String rootUri, String projectPath) {
+    String name, String rootUri, String projectPath,) {
   // Absolute file URI (hosted or git from pub-cache)
   if (rootUri.startsWith('file://')) {
     final uri = Uri.parse(rootUri);

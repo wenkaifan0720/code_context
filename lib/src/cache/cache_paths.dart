@@ -106,7 +106,7 @@ class CachePaths {
 
   /// Path to local package manifest file in workspace registry.
   static String localPackageManifest(
-          String workspaceRoot, String packageName) =>
+          String workspaceRoot, String packageName,) =>
       '${localPackageDir(workspaceRoot, packageName)}/manifest.json';
 
   /// Path to per-package working index directory.
@@ -134,7 +134,7 @@ class CachePaths {
 
   /// Check if a Flutter package index exists.
   static Future<bool> hasFlutterIndex(
-      String version, String packageName) async {
+      String version, String packageName,) async {
     return File(flutterIndex(version, packageName)).exists();
   }
 
@@ -150,7 +150,7 @@ class CachePaths {
 
   /// Check if a local package index exists in workspace registry.
   static Future<bool> hasLocalPackageIndex(
-      String workspaceRoot, String packageName) async {
+      String workspaceRoot, String packageName,) async {
     return File(localPackageIndex(workspaceRoot, packageName)).exists();
   }
 

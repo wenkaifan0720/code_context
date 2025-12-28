@@ -1,4 +1,5 @@
 /// Utilities for parsing pubspec files.
+library;
 
 /// Information about a package from pubspec.lock.
 class PackageInfo {

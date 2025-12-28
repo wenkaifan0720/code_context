@@ -223,11 +223,7 @@ class ExternalIndexBuilder {
     // Try to find an existing package_config.json
     var packageConfig = await findPackageConfig(Directory(absPath));
 
-    if (packageConfig == null) {
-      // For packages without package_config (like pub cache packages),
-      // create a minimal synthetic config
-      packageConfig = _createSyntheticPackageConfig(absPath, pubspec.name);
-    }
+    packageConfig ??= _createSyntheticPackageConfig(absPath, pubspec.name);
 
     // Check if lib/ directory exists
     final libPath = '$absPath/lib';
@@ -322,7 +318,7 @@ class ExternalIndexBuilder {
   ///
   /// This is used for packages in pub cache that don't have package_config.json.
   PackageConfig _createSyntheticPackageConfig(
-      String packagePath, String packageName) {
+      String packagePath, String packageName,) {
     // Use absolute file:// URI for the package root
     final packageUri = Uri.file('$packagePath/');
     return PackageConfig([
@@ -380,7 +376,7 @@ class ExternalIndexBuilder {
           version: pkg.version,
           skipped: true,
           reason: 'already indexed',
-        ));
+        ),);
         continue;
       }
 
@@ -393,7 +389,7 @@ class ExternalIndexBuilder {
           version: pkg.version,
           skipped: true,
           reason: 'not found in pub cache',
-        ));
+        ),);
         continue;
       }
 
@@ -401,7 +397,7 @@ class ExternalIndexBuilder {
     }
 
     onProgress?.call(
-        'Indexing ${toIndex.length} packages (${skippedResults.length} skipped)...');
+        'Indexing ${toIndex.length} packages (${skippedResults.length} skipped)...',);
 
     // Process packages in parallel with concurrency limit
     final indexedResults = <PackageIndexResult>[];
@@ -502,7 +498,7 @@ class ExternalIndexBuilder {
           version: version,
           skipped: true,
           reason: 'not found',
-        ));
+        ),);
         continue;
       }
 
@@ -521,7 +517,7 @@ class ExternalIndexBuilder {
             name: pkgName,
             version: version,
             error: 'pub get failed',
-          ));
+          ),);
           continue;
         }
       }
@@ -536,14 +532,14 @@ class ExternalIndexBuilder {
           version: version,
           success: true,
           symbolCount: result.stats?['symbols'] as int?,
-        ));
+        ),);
       } else {
         onProgress?.call('$pkgName: failed - ${result.error}');
         results.add(PackageIndexResult(
           name: pkgName,
           version: version,
           error: result.error,
-        ));
+        ),);
       }
     }
 

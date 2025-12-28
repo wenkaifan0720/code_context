@@ -159,7 +159,7 @@ class ScipIndex {
             symbol: occ.symbol,
             startLine: startLine,
             endLine: endLine,
-          ));
+          ),);
         }
       }
 
@@ -247,7 +247,7 @@ class ScipIndex {
           symbol: occ.symbol,
           startLine: startLine,
           endLine: endLine,
-        ));
+        ),);
       }
     }
 

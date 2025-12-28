@@ -196,7 +196,7 @@ Future<DiscoveryResult> discoverPackages(String rootPath) async {
       name: name,
       path: packageDir,
       relativePath: relativePath,
-    ));
+    ),);
   }
 
   // Sort by relative path for consistent ordering
@@ -233,7 +233,7 @@ DiscoveryResult discoverPackagesSync(String rootPath) {
       name: name,
       path: packageDir,
       relativePath: relativePath,
-    ));
+    ),);
   }
 
   packages.sort((a, b) => a.relativePath.compareTo(b.relativePath));
@@ -301,7 +301,7 @@ Map<String, dynamic> discoveryResultToJson(DiscoveryResult result) {
               'name': p.name,
               'path': p.path,
               'relativePath': p.relativePath,
-            })
+            },)
         .toList(),
   };
 }

@@ -1,6 +1,6 @@
 name: dart_context
 description: Lightweight semantic code intelligence for Dart. Query your codebase with a simple DSL.
-version: 0.1.0
+version: 0.2.0
 
 environment:
   sdk: ^3.0.0
