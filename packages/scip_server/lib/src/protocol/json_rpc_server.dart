@@ -72,6 +72,10 @@ class ScipServer {
       if (request.isNotification) return null;
 
       return JsonRpcResponse(id: request.id, result: result);
+    } on JsonRpcError catch (e) {
+      // Preserve specific error codes
+      if (request.isNotification) return null;
+      return JsonRpcResponse(id: request.id, error: e);
     } catch (e) {
       if (request.isNotification) return null;
 

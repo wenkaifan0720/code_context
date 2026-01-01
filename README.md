@@ -80,6 +80,7 @@ dart_context -i
 | [Getting Started](doc/getting-started.md) | Installation and basic usage |
 | [Query DSL](doc/query-dsl.md) | Complete command reference |
 | [Architecture](doc/architecture.md) | How it works, package structure |
+| [SCIP Server](doc/scip-server.md) | JSON-RPC protocol server |
 | [MCP Integration](doc/mcp-integration.md) | Using with Cursor/AI agents |
 | [Monorepo Support](doc/monorepo.md) | Multi-package workspaces |
 | [Cross-Package Queries](doc/cross-package-queries.md) | Querying SDK and dependencies |
