@@ -439,7 +439,7 @@ class ExternalHelper {
 
       executor = QueryExecutor(
         projectIndex,
-        provider: registry,
+        provider: registry.toProvider(),
       );
     });
 

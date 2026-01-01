@@ -95,7 +95,7 @@ class GrepMatchInfo {
     required this.column,
     required this.matchText,
     this.contextLines,
-    this.contextBefore,
+    this.contextBefore = 0,
     this.symbolContext,
     this.matchLineCount = 1,
   });
@@ -104,9 +104,16 @@ class GrepMatchInfo {
   final int line;
   final int column;
   final String matchText;
+
+  /// Lines of context around the match.
   final List<String>? contextLines;
-  final List<String>? contextBefore;
+
+  /// Number of context lines before the match line in [contextLines].
+  final int contextBefore;
+
   final String? symbolContext;
+
+  /// Number of lines the match spans (for multiline matches).
   final int matchLineCount;
 }
 

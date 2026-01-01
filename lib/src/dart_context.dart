@@ -138,11 +138,11 @@ class DartContext {
       await watcher.start();
     }
 
-    // 6. Create executor
-    // Note: Registry doesn't implement IndexProvider yet, so we pass null
-    // TODO: Implement IndexProvider wrapper for PackageRegistry
+    // 6. Create executor with provider for cross-package queries
+    final provider = PackageRegistryProvider(registry);
     final executor = QueryExecutor(
       registry.projectIndex,
+      provider: provider,
     );
 
     onProgress?.call('Ready');

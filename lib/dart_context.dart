@@ -139,6 +139,8 @@ export 'package:dart_binding/dart_binding.dart'
         IndexErrorUpdate,
         // Package management
         PackageRegistry,
+        PackageRegistryProvider,
+        PackageRegistryProviderExtension,
         LocalPackageIndex,
         ExternalPackageIndex,
         ExternalPackageType,

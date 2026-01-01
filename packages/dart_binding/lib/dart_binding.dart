@@ -17,6 +17,7 @@ export 'src/external_index_builder.dart';
 
 // Package management
 export 'src/package_registry.dart';
+export 'src/package_registry_provider.dart';
 export 'src/package_discovery.dart';
 
 // Cache utilities
