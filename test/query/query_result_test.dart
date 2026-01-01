@@ -2,7 +2,6 @@
 import 'dart:convert';
 
 import 'package:dart_context/dart_context.dart';
-import 'package:dart_context/dart_context.dart';
 import 'package:scip_dart/src/gen/scip.pb.dart' as scip;
 import 'package:test/test.dart';
 

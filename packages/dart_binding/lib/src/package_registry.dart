@@ -49,7 +49,7 @@ class LocalPackageIndex {
       throw StateError(
           'This LocalPackageIndex was created for testing without an indexer',);
     }
-    return _indexer!;
+    return _indexer;
   }
 
   /// The SCIP index for this package.

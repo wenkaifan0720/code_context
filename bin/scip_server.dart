@@ -57,7 +57,6 @@ library;
 import 'dart:io';
 
 import 'package:dart_context/dart_context.dart';
-import 'package:scip_server/scip_server.dart';
 
 void main(List<String> args) async {
   final isTcp = args.contains('--tcp');
