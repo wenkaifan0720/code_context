@@ -1,0 +1,93 @@
+# Cross-Package Queries
+
+dart_context supports querying across external dependencies (SDK, Flutter, pub packages) by pre-computing their indexes.
+
+## Pre-Indexing Commands
+
+```bash
+# Pre-index Flutter SDK packages (do this once per Flutter version)
+dart_context index-flutter /path/to/flutter
+
+# Pre-index the Dart SDK (do this once per SDK version)
+dart_context index-sdk /path/to/dart-sdk
+
+# Pre-index all dependencies from pubspec.lock
+dart_context index-deps
+
+# List available pre-computed indexes
+dart_context list-indexes
+```
+
+## Using Pre-Computed Indexes
+
+```bash
+# Query with dependencies loaded
+dart_context --with-deps "hierarchy MyWidget"
+
+# Search dependencies with grep -D flag
+dart_context --with-deps "grep Navigator -D -l"
+```
+
+## Global Cache Structure
+
+Indexes are stored in `~/.dart_context/` with a structure that mirrors pub cache:
+
+```
+~/.dart_context/                      # Global cache
+├── sdk/
+│   └── 3.2.0/index.scip             # Dart SDK indexes
+├── flutter/
+│   └── 3.32.0/flutter/index.scip    # Flutter SDK packages
+├── hosted/
+│   ├── collection-1.18.0/index.scip # Pub packages
+│   └── analyzer-6.3.0/index.scip
+└── git/
+    └── fluxon-bfef6c5e/index.scip   # Git dependencies
+```
+
+## Example Queries
+
+With pre-computed indexes, you can:
+
+```bash
+# See Flutter widget hierarchy
+hierarchy SignatureVisitor
+# Output: Shows that it extends RecursiveAstVisitor from analyzer
+
+# Get full Flutter supertypes
+supertypes MyWidget
+# Output: Full hierarchy including StatelessWidget, Widget, etc.
+
+# Find all uses of a Flutter class
+refs StatefulWidget
+# Output: All files using StatefulWidget
+
+# Search in dependencies
+grep /build.*Widget/ -D
+# Output: Matches in Flutter source code
+```
+
+## Loading Dependencies Programmatically
+
+```dart
+final context = await DartContext.open('/path/to/project');
+
+// Load all dependencies from pubspec.lock
+final result = await context.loadDependencies();
+print('Loaded ${result.loaded} packages');
+print('Skipped ${result.skipped} (already cached)');
+print('Failed: ${result.failed}');
+
+// Now queries include dependencies
+final hierarchy = await context.query('hierarchy MyWidget');
+```
+
+## Performance Considerations
+
+- Pre-indexing takes time (~1-2 min for Flutter SDK)
+- Once indexed, loading is instant (just reads from disk)
+- Only index what you need (SDK vs Flutter vs all deps)
+- Indexes are shared across projects
+
+**Note**: Pre-indexing is optional. By default, dart_context only indexes your project code.
+
