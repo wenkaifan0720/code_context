@@ -168,6 +168,42 @@ Benefits:
 
 ## LLM Context Building
 
+### Dependency Context Strategy
+
+When generating docs for folder A, we need context about its dependencies:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Context for Folder A                          │
+├─────────────────────────────────────────────────────────────────┤
+│  Full Context (current folder):                                  │
+│    - All source files                                            │
+│    - All doc comments                                            │
+│    - Full SCIP symbol info                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Summary Context (dependencies):                                 │
+│    - Doc summary (if already generated)                          │
+│    - Public API signatures only                                  │
+│    - Which specific symbols are used                             │
+├─────────────────────────────────────────────────────────────────┤
+│  Mention Only (transitive deps):                                 │
+│    - Just names and one-line descriptions                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Why this layering?**
+
+1. **Token efficiency**: Full source for deps would explode context
+2. **Bottom-up generation**: Dependency docs are generated first, so we can include their summaries
+3. **SCIP provides the graph**: We know exactly which symbols are called
+4. **Avoid circular issues**: We only include *outgoing* dependencies, not the full transitive closure
+
+**What about dependents (who calls this folder)?**
+
+Include a brief "dependents" section so the LLM understands how this code is used:
+- Helps generate better "Usage" sections in docs
+- Provides context for what's important to document
+
 ### Folder-Level Docs (Input)
 
 The lowest level - generated directly from source code:
@@ -212,6 +248,53 @@ symbols:  # From SCIP
   imports:
     - package:firebase_auth/firebase_auth.dart
     - ../core/token_manager.dart
+
+# Dependencies: folders/files this folder calls into
+dependencies:
+  internal:
+    - path: lib/core/token_manager.dart
+      # If doc already generated (bottom-up), include the doc summary
+      doc_summary: |
+        TokenManager handles secure storage and retrieval of JWT tokens.
+        Key methods: store(), retrieve(), clear()
+      # Always include the API signature from SCIP
+      public_api:
+        - "class TokenManager"
+        - "  Future<void> store(String token)"
+        - "  Future<String?> retrieve()"
+        - "  Future<void> clear()"
+      # Which specific symbols are called by current folder
+      used_symbols:
+        - TokenManager.store
+        - TokenManager.retrieve
+        
+    - path: lib/data/user_dao.dart
+      doc_summary: "Persists user data to local database."
+      public_api:
+        - "class UserDao"
+        - "  Future<void> saveUser(User user)"
+      used_symbols:
+        - UserDao.saveUser
+        
+  external:  # From pub packages
+    - package: firebase_auth
+      version: 4.6.0
+      # Include cached doc if available
+      doc_summary: "Firebase Authentication SDK for Flutter."
+      # Which symbols are used
+      used_symbols:
+        - FirebaseAuth.instance
+        - UserCredential
+        
+# Dependents: who calls into this folder (for context on how it's used)
+dependents:
+  - path: lib/ui/login_page.dart
+    uses:
+      - AuthService.login
+      - AuthService.authStateChanges
+  - path: lib/features/profile/profile_service.dart
+    uses:
+      - AuthService.currentUser
 
 existing_readme: |
   # Auth Feature
