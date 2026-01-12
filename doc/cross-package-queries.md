@@ -1,39 +1,39 @@
 # Cross-Package Queries
 
-dart_context supports querying across external dependencies (SDK, Flutter, pub packages) by pre-computing their indexes.
+code_context supports querying across external dependencies (SDK, Flutter, pub packages) by pre-computing their indexes.
 
 ## Pre-Indexing Commands
 
 ```bash
 # Pre-index Flutter SDK packages (do this once per Flutter version)
-dart_context index-flutter /path/to/flutter
+code_context index-flutter /path/to/flutter
 
 # Pre-index the Dart SDK (do this once per SDK version)
-dart_context index-sdk /path/to/dart-sdk
+code_context index-sdk /path/to/dart-sdk
 
 # Pre-index all dependencies from pubspec.lock
-dart_context index-deps
+code_context index-deps
 
 # List available pre-computed indexes
-dart_context list-indexes
+code_context list-indexes
 ```
 
 ## Using Pre-Computed Indexes
 
 ```bash
 # Query with dependencies loaded
-dart_context --with-deps "hierarchy MyWidget"
+code_context --with-deps "hierarchy MyWidget"
 
 # Search dependencies with grep -D flag
-dart_context --with-deps "grep Navigator -D -l"
+code_context --with-deps "grep Navigator -D -l"
 ```
 
 ## Global Cache Structure
 
-Indexes are stored in `~/.dart_context/` with a structure that mirrors pub cache:
+Indexes are stored in `~/.code_context/` with a structure that mirrors pub cache:
 
 ```
-~/.dart_context/                      # Global cache
+~/.code_context/                      # Global cache
 ├── sdk/
 │   └── 3.2.0/index.scip             # Dart SDK indexes
 ├── flutter/
@@ -70,7 +70,7 @@ grep /build.*Widget/ -D
 ## Loading Dependencies Programmatically
 
 ```dart
-final context = await DartContext.open('/path/to/project');
+final context = await CodeContext.open('/path/to/project');
 
 // Load all dependencies from pubspec.lock
 final result = await context.loadDependencies();
@@ -89,5 +89,5 @@ final hierarchy = await context.query('hierarchy MyWidget');
 - Only index what you need (SDK vs Flutter vs all deps)
 - Indexes are shared across projects
 
-**Note**: Pre-indexing is optional. By default, dart_context only indexes your project code.
+**Note**: Pre-indexing is optional. By default, code_context only indexes your project code.
 

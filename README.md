@@ -1,6 +1,8 @@
-# dart_context
+# code_context
 
-Lightweight semantic code intelligence for Dart. Query your codebase with a simple DSL.
+Lightweight semantic code intelligence. Query your codebase with a simple DSL.
+
+> Currently supports Dart with a pluggable architecture for adding other languages.
 
 ## Features
 
@@ -16,19 +18,19 @@ Lightweight semantic code intelligence for Dart. Query your codebase with a simp
 
 ```bash
 # As a library
-dart pub add dart_context
+dart pub add code_context
 
 # As a CLI tool
-dart pub global activate dart_context
+dart pub global activate code_context
 ```
 
 ### Library Usage
 
 ```dart
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main() async {
-  final context = await DartContext.open('/path/to/project');
+  final context = await CodeContext.open('/path/to/project');
 
   // Query with DSL
   final result = await context.query('def AuthRepository');
@@ -46,16 +48,16 @@ void main() async {
 
 ```bash
 # Find definition
-dart_context def AuthRepository
+code_context def AuthRepository
 
 # Find references  
-dart_context refs login
+code_context refs login
 
 # Search with filters
-dart_context "find Auth* kind:class"
+code_context "find Auth* kind:class"
 
 # Interactive mode
-dart_context -i
+code_context -i
 ```
 
 ## Query DSL
@@ -99,7 +101,7 @@ dart_context -i
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           DartContext                                   │
+│                           CodeContext                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐│
 │  │ LLM / Agent  │────▶│ Query String │────▶│    QueryExecutor         ││
@@ -125,7 +127,7 @@ dart_context -i
 This project is organized as a Dart pub workspace:
 
 ```
-dart_context/
+code_context/
 ├── packages/
 │   ├── scip_server/      # Language-agnostic SCIP protocol core
 │   └── dart_binding/     # Dart-specific implementation

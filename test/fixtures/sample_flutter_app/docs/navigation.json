@@ -1,0 +1,129 @@
+{
+  "nodes": [
+    "HomePage",
+    "LoginPage",
+    "ProductDetailPage",
+    "ProductListPage",
+    "ProfilePage",
+    "SettingsPage",
+    "SignupPage"
+  ],
+  "edges": [
+    {
+      "from": 5,
+      "to": 0,
+      "trigger": "SettingsPage → onPressed",
+      "routePath": "/home"
+    },
+    {
+      "from": 5,
+      "to": 4,
+      "trigger": "SettingsPage → onTap",
+      "routePath": "/profile"
+    },
+    {
+      "from": 5,
+      "to": 1,
+      "trigger": "SettingsPage → onTap → if(context.mounted)",
+      "routePath": "/login"
+    },
+    {
+      "from": 4,
+      "to": 5,
+      "trigger": "ProfilePage → onPressed",
+      "routePath": "/settings"
+    },
+    {
+      "from": 0,
+      "to": 5,
+      "trigger": "HomePage → onPressed",
+      "routePath": "/settings"
+    },
+    {
+      "from": 0,
+      "to": 4,
+      "trigger": "HomePage → builder → onTap",
+      "routePath": "/profile"
+    },
+    {
+      "from": 3,
+      "to": 0,
+      "trigger": "_ProductListPageState → onPressed",
+      "routePath": "/home"
+    },
+    {
+      "from": 6,
+      "to": 0,
+      "trigger": "_SignupPageState → _handleSignup → if(success && mounted)",
+      "routePath": "/home"
+    },
+    {
+      "from": 6,
+      "to": 1,
+      "trigger": "_SignupPageState → _navigateToLogin",
+      "routePath": "/login"
+    },
+    {
+      "from": 1,
+      "to": 0,
+      "trigger": "_LoginPageState → _handleLogin → if(success && mounted)",
+      "routePath": "/home"
+    },
+    {
+      "from": 1,
+      "to": 6,
+      "trigger": "_LoginPageState → _navigateToSignup",
+      "routePath": "/signup"
+    }
+  ],
+  "metadata": {
+    "screenCount": 7,
+    "edgeCount": 11,
+    "routerType": "goRouter",
+    "entryScreen": "HomePage",
+    "screens": [
+      {
+        "name": "SettingsPage",
+        "index": 5,
+        "feature": "settings",
+        "file": "lib/features/settings/pages/settings_page.dart"
+      },
+      {
+        "name": "ProfilePage",
+        "index": 4,
+        "feature": "settings",
+        "file": "lib/features/settings/pages/profile_page.dart"
+      },
+      {
+        "name": "HomePage",
+        "index": 0,
+        "feature": "home",
+        "file": "lib/features/home/pages/home_page.dart"
+      },
+      {
+        "name": "ProductListPage",
+        "index": 3,
+        "feature": "products",
+        "file": "lib/features/products/pages/product_list_page.dart"
+      },
+      {
+        "name": "ProductDetailPage",
+        "index": 2,
+        "feature": "products",
+        "file": "lib/features/products/pages/product_detail_page.dart"
+      },
+      {
+        "name": "SignupPage",
+        "index": 6,
+        "feature": "auth",
+        "file": "lib/features/auth/pages/signup_page.dart"
+      },
+      {
+        "name": "LoginPage",
+        "index": 1,
+        "feature": "auth",
+        "file": "lib/features/auth/pages/login_page.dart"
+      }
+    ]
+  }
+}

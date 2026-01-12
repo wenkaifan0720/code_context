@@ -20,6 +20,8 @@
 /// - `sig <symbol>` - Get signature (without body)
 /// - `symbols <file>` - List all symbols in a file
 /// - `get <scip-id>` - Direct lookup by exact SCIP symbol ID
+/// - `classify [pattern]` - Classify symbols by layer and feature
+/// - `storyboard [--entry:<screen>]` - Generate navigation storyboard
 ///
 /// Qualified names:
 /// - `refs MyClass.login` - References to login method in MyClass
@@ -144,6 +146,8 @@ class ScipQuery {
     // Some actions don't require a target
     if (action != QueryAction.files &&
         action != QueryAction.stats &&
+        action != QueryAction.classify &&
+        action != QueryAction.storyboard &&
         (target == null || target.isEmpty)) {
       throw FormatException('Missing target symbol for action: $actionStr');
     }
@@ -212,6 +216,8 @@ class ScipQuery {
       'get' => QueryAction.get,
       'files' => QueryAction.files,
       'stats' => QueryAction.stats,
+      'classify' => QueryAction.classify,
+      'storyboard' || 'nav' || 'navigation' => QueryAction.storyboard,
       _ => throw FormatException('Unknown action: $action'),
     };
   }
@@ -314,6 +320,12 @@ class ScipQuery {
   /// Only applies to grep command.
   bool get searchDeps => filters.containsKey('D') || filters.containsKey('search-deps');
 
+  /// Get entry point for storyboard (--entry:<screen>).
+  String? get entryPoint => filters['entry'];
+
+  /// Get output format (--format:mermaid|ascii|json).
+  String get outputFormat => filters['format'] ?? 'mermaid';
+
   /// Parse the target as a pattern.
   ParsedPattern get parsedPattern => ParsedPattern.parse(
         target,
@@ -401,6 +413,12 @@ enum QueryAction {
 
   /// Get index statistics.
   stats,
+
+  /// Classify symbols by layer and feature.
+  classify,
+
+  /// Generate navigation storyboard.
+  storyboard,
 }
 
 /// Pattern type for matching.

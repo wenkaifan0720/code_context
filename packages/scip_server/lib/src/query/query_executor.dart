@@ -3,6 +3,8 @@ import 'dart:io';
 // ignore: implementation_imports
 import 'package:scip_dart/src/gen/scip.pb.dart' as scip;
 
+import '../classification/classifier.dart';
+import '../classification/navigation.dart';
 import '../index/index_provider.dart';
 import '../index/scip_index.dart';
 import 'query_parser.dart';
@@ -554,6 +556,8 @@ class QueryExecutor {
       QueryAction.get => _getByScipId(query),
       QueryAction.files => _listFiles(),
       QueryAction.stats => _getStats(),
+      QueryAction.classify => _classify(query),
+      QueryAction.storyboard => _storyboard(query),
     };
   }
 
@@ -1887,5 +1891,84 @@ class QueryExecutor {
         source: source,
       ),
     ]);
+  }
+
+  /// Classify symbols by layer and feature.
+  Future<QueryResult> _classify(ScipQuery query) async {
+    final classifier = SymbolClassifierService(index);
+
+    // Get pattern from target (empty means all)
+    final pattern = query.target.isEmpty ? null : query.target;
+
+    final classifications = classifier.classifyAll(pattern: pattern);
+
+    if (classifications.isEmpty) {
+      return NotFoundResult(
+        pattern != null
+            ? 'No symbols found matching "$pattern"'
+            : 'No classifiable symbols found in index',
+      );
+    }
+
+    // Convert to serializable format
+    final classificationInfos = classifications.map((c) {
+      return SymbolClassificationInfo(
+        symbolId: c.symbol.symbol,
+        name: c.symbol.name,
+        layer: c.layer.name,
+        feature: c.feature,
+        confidence: c.confidence,
+        file: c.symbol.file,
+        signals: c.signals,
+      );
+    }).toList();
+
+    return ClassifyResult(
+      classifications: classificationInfos,
+      pattern: pattern,
+    );
+  }
+
+  /// Generate navigation storyboard.
+  Future<QueryResult> _storyboard(ScipQuery query) async {
+    final detector = NavigationDetector(index);
+    final featureDetector = FeatureDetector(index);
+
+    final graph = await detector.buildNavigationGraph(
+      entryPoint: query.entryPoint,
+    );
+
+    if (graph.screens.isEmpty) {
+      return NotFoundResult(
+        'No screens found. Looking for classes ending with Page, Screen, or View.',
+      );
+    }
+
+    // Convert to serializable format
+    final screens = graph.screens.map((s) {
+      return ScreenInfo(
+        name: s.name,
+        feature: featureDetector.detectFeature(s),
+        file: s.file,
+      );
+    }).toList();
+
+    final edges = graph.edges.map((e) {
+      return NavigationEdgeInfo(
+        fromScreen: e.fromScreen,
+        toScreen: e.toScreen,
+        trigger: e.trigger,
+        label: e.label,
+        routePath: e.routePath,
+      );
+    }).toList();
+
+    return StoryboardResult(
+      screens: screens,
+      edges: edges,
+      routerType: graph.routerType.name,
+      entryScreen: graph.entryScreen,
+      format: query.outputFormat,
+    );
   }
 }

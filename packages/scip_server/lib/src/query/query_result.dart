@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../index/scip_index.dart';
 
 /// Result of a query execution.
@@ -1317,6 +1319,399 @@ class GrepCountResult extends QueryResult {
         'fileCounts': fileCounts,
         'totalCount': count,
       };
+}
+
+/// Result containing symbol classifications.
+///
+/// Groups symbols by architectural layer and feature for documentation
+/// and codebase understanding.
+class ClassifyResult extends QueryResult {
+  const ClassifyResult({
+    required this.classifications,
+    this.pattern,
+  });
+
+  final List<SymbolClassificationInfo> classifications;
+  final String? pattern;
+
+  @override
+  bool get isEmpty => classifications.isEmpty;
+
+  @override
+  int get count => classifications.length;
+
+  @override
+  String toText() {
+    if (classifications.isEmpty) {
+      return 'No symbols found to classify.';
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln('## Symbol Classification (${classifications.length} symbols)');
+    buffer.writeln('');
+
+    // Group by layer
+    final byLayer = <String, List<SymbolClassificationInfo>>{};
+    for (final c in classifications) {
+      byLayer.putIfAbsent(c.layer, () => []).add(c);
+    }
+
+    // Order layers
+    const layerOrder = ['ui', 'service', 'data', 'model', 'util', 'unknown'];
+    final sortedLayers = byLayer.keys.toList()
+      ..sort((a, b) => layerOrder.indexOf(a).compareTo(layerOrder.indexOf(b)));
+
+    for (final layer in sortedLayers) {
+      final symbols = byLayer[layer]!;
+      buffer.writeln('### ${_layerDisplayName(layer)} (${symbols.length})');
+      buffer.writeln('');
+
+      for (final c in symbols) {
+        final feature = c.feature != null ? ' [${c.feature}]' : '';
+        final file = c.file ?? 'external';
+        buffer.writeln('- ${c.name}$feature');
+        buffer.writeln('  $file');
+      }
+      buffer.writeln('');
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  String _layerDisplayName(String layer) {
+    return switch (layer) {
+      'ui' => 'UI Layer',
+      'service' => 'Service Layer',
+      'data' => 'Data Layer',
+      'model' => 'Model Layer',
+      'util' => 'Utility Layer',
+      _ => 'Unclassified',
+    };
+  }
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'classify',
+        'count': classifications.length,
+        if (pattern != null) 'pattern': pattern,
+        'classifications': classifications
+            .map(
+              (c) => {
+                'symbol': c.symbolId,
+                'name': c.name,
+                'layer': c.layer,
+                if (c.feature != null) 'feature': c.feature,
+                'confidence': c.confidence,
+                if (c.file != null) 'file': c.file,
+                'signals': c.signals,
+              },
+            )
+            .toList(),
+      };
+}
+
+/// Classification info for a single symbol (serializable).
+class SymbolClassificationInfo {
+  const SymbolClassificationInfo({
+    required this.symbolId,
+    required this.name,
+    required this.layer,
+    this.feature,
+    required this.confidence,
+    this.file,
+    this.signals = const [],
+  });
+
+  final String symbolId;
+  final String name;
+  final String layer;
+  final String? feature;
+  final double confidence;
+  final String? file;
+  final List<String> signals;
+}
+
+/// Result containing navigation storyboard.
+///
+/// Generates Mermaid flowchart or ASCII diagram showing
+/// screen navigation flows.
+class StoryboardResult extends QueryResult {
+  const StoryboardResult({
+    required this.screens,
+    required this.edges,
+    required this.routerType,
+    this.entryScreen,
+    this.format = 'mermaid',
+  });
+
+  final List<ScreenInfo> screens;
+  final List<NavigationEdgeInfo> edges;
+  final String routerType;
+  final String? entryScreen;
+  final String format;
+
+  @override
+  bool get isEmpty => screens.isEmpty;
+
+  @override
+  int get count => screens.length;
+
+  @override
+  String toText() {
+    if (screens.isEmpty) {
+      return 'No screens found in codebase.';
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln('## Navigation Storyboard');
+    buffer.writeln('');
+    buffer.writeln('${screens.length} screens, ${edges.length} navigation edges');
+    buffer.writeln('Router: $routerType');
+    if (entryScreen != null) {
+      buffer.writeln('Entry: $entryScreen');
+    }
+    buffer.writeln('');
+
+    // Generate text-based graph representation
+    buffer.writeln(_generateTextGraph());
+
+    return buffer.toString().trimRight();
+  }
+
+  /// Generate a text-based graph representation (mermaid-like but plain text).
+  String _generateTextGraph() {
+    final buffer = StringBuffer();
+    buffer.writeln('### Graph');
+    buffer.writeln('');
+
+    // Group edges by source screen
+    final bySource = <String, List<NavigationEdgeInfo>>{};
+    for (final edge in edges) {
+      bySource.putIfAbsent(edge.fromScreen, () => []).add(edge);
+    }
+
+    // Find screens with no outgoing edges
+    final screensWithEdges = bySource.keys.toSet();
+    final screensWithoutEdges =
+        screens.map((s) => s.name).where((s) => !screensWithEdges.contains(s));
+
+    // Print each source and its targets
+    for (final source in bySource.keys.toList()..sort()) {
+      final targets = bySource[source]!;
+      buffer.writeln('$source');
+      for (final edge in targets) {
+        final trigger = edge.trigger ?? 'navigate';
+        final route = edge.routePath != null ? ' (${edge.routePath})' : '';
+        buffer.writeln('  --> ${edge.toScreen}$route');
+        buffer.writeln('      trigger: $trigger');
+      }
+      buffer.writeln('');
+    }
+
+    // Print orphan screens (no outgoing edges)
+    if (screensWithoutEdges.isNotEmpty) {
+      buffer.writeln('### Leaf Screens (no outgoing navigation)');
+      for (final screen in screensWithoutEdges) {
+        buffer.writeln('- $screen');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  /// Generate JSON format compatible with DirectedGraph.
+  String _generateGraphJson() {
+    final nodes = <String>[];
+
+    // Collect unique nodes
+    final nodeSet = <String>{};
+    for (final screen in screens) {
+      nodeSet.add(screen.name);
+    }
+    for (final edge in edges) {
+      nodeSet.add(edge.fromScreen);
+      nodeSet.add(edge.toScreen);
+    }
+
+    // Create ordered node list
+    nodes.addAll(nodeSet.toList()..sort());
+
+    // Create node index lookup
+    final nodeIndex = <String, int>{};
+    for (var i = 0; i < nodes.length; i++) {
+      nodeIndex[nodes[i]] = i;
+    }
+
+    // Create edges with full metadata (no escaping needed)
+    final edgeList = <Map<String, dynamic>>[];
+    for (final edge in edges) {
+      final edgeData = <String, dynamic>{
+        'from': nodeIndex[edge.fromScreen]!,
+        'to': nodeIndex[edge.toScreen]!,
+      };
+      if (edge.trigger != null) edgeData['trigger'] = edge.trigger;
+      if (edge.label != null) edgeData['label'] = edge.label;
+      if (edge.routePath != null) edgeData['routePath'] = edge.routePath;
+      edgeList.add(edgeData);
+    }
+
+    // Build the JSON structure
+    final json = {
+      'nodes': nodes,
+      'edges': edgeList,
+      'metadata': {
+        'screenCount': screens.length,
+        'edgeCount': edges.length,
+        'routerType': routerType,
+        if (entryScreen != null) 'entryScreen': entryScreen,
+      },
+    };
+
+    // Pretty print
+    final encoder = const JsonEncoder.withIndent('  ');
+    return encoder.convert(json);
+  }
+
+  String _generateAscii() {
+    final buffer = StringBuffer();
+    buffer.writeln('Navigation Flow');
+    buffer.writeln('===============');
+    buffer.writeln('');
+
+    // Build adjacency list
+    final adjacency = <String, List<String>>{};
+    for (final edge in edges) {
+      adjacency.putIfAbsent(edge.fromScreen, () => []).add(edge.toScreen);
+    }
+
+    // Find root screens (screens with no incoming edges)
+    final allTargets = edges.map((e) => e.toScreen).toSet();
+    final roots = screens
+        .map((s) => s.name)
+        .where((s) => !allTargets.contains(s))
+        .toList();
+
+    if (roots.isEmpty && screens.isNotEmpty) {
+      roots.add(entryScreen ?? screens.first.name);
+    }
+
+    // Print tree from each root
+    final visited = <String>{};
+    for (final root in roots) {
+      _printAsciiTree(buffer, root, adjacency, visited, 0);
+      buffer.writeln('');
+    }
+
+    return buffer.toString();
+  }
+
+  void _printAsciiTree(
+    StringBuffer buffer,
+    String node,
+    Map<String, List<String>> adjacency,
+    Set<String> visited,
+    int depth,
+  ) {
+    final indent = '  ' * depth;
+    final prefix = depth == 0 ? '' : '└─ ';
+    buffer.writeln('$indent$prefix$node');
+
+    if (visited.contains(node)) {
+      buffer.writeln('$indent  (cycle)');
+      return;
+    }
+    visited.add(node);
+
+    final children = adjacency[node] ?? [];
+    for (final child in children) {
+      _printAsciiTree(buffer, child, adjacency, visited, depth + 1);
+    }
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    // Collect all unique node names (screens + dynamic route targets)
+    final nodeSet = <String>{};
+    for (final screen in screens) {
+      nodeSet.add(screen.name);
+    }
+    for (final edge in edges) {
+      nodeSet.add(edge.fromScreen);
+      nodeSet.add(edge.toScreen);
+    }
+
+    // Create sorted node list
+    final nodes = nodeSet.toList()..sort();
+
+    // Create node index lookup
+    final nodeIndex = <String, int>{};
+    for (var i = 0; i < nodes.length; i++) {
+      nodeIndex[nodes[i]] = i;
+    }
+
+    // Create edges with indexes (DirectedGraph compatible)
+    final edgeList = <Map<String, dynamic>>[];
+    for (final edge in edges) {
+      final edgeData = <String, dynamic>{
+        'from': nodeIndex[edge.fromScreen]!,
+        'to': nodeIndex[edge.toScreen]!,
+      };
+      if (edge.trigger != null) edgeData['trigger'] = edge.trigger;
+      if (edge.label != null) edgeData['label'] = edge.label;
+      if (edge.routePath != null) edgeData['routePath'] = edge.routePath;
+      edgeList.add(edgeData);
+    }
+
+    return {
+      'nodes': nodes,
+      'edges': edgeList,
+      'metadata': {
+        'screenCount': screens.length,
+        'edgeCount': edges.length,
+        'routerType': routerType,
+        if (entryScreen != null) 'entryScreen': entryScreen,
+        // Include screen details for richer visualization
+        'screens': screens
+            .map((s) => {
+                  'name': s.name,
+                  'index': nodeIndex[s.name],
+                  if (s.feature != null) 'feature': s.feature,
+                  if (s.file != null) 'file': s.file,
+                })
+            .toList(),
+      },
+    };
+  }
+}
+
+/// Screen info for storyboard (serializable).
+class ScreenInfo {
+  const ScreenInfo({
+    required this.name,
+    this.feature,
+    this.file,
+  });
+
+  final String name;
+  final String? feature;
+  final String? file;
+}
+
+/// Navigation edge info for storyboard (serializable).
+class NavigationEdgeInfo {
+  const NavigationEdgeInfo({
+    required this.fromScreen,
+    required this.toScreen,
+    this.trigger,
+    this.label,
+    this.routePath,
+  });
+
+  final String fromScreen;
+  final String toScreen;
+  final String? trigger;
+  final String? label;
+  final String? routePath;
 }
 
 /// Properly pluralize a kind string.

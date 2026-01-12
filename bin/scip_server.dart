@@ -56,7 +56,7 @@ library;
 
 import 'dart:io';
 
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main(List<String> args) async {
   final isTcp = args.contains('--tcp');

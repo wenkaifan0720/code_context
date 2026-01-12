@@ -5,13 +5,13 @@
 ### As a Library
 
 ```bash
-dart pub add dart_context
+dart pub add code_context
 ```
 
 ### As a CLI Tool
 
 ```bash
-dart pub global activate dart_context
+dart pub global activate code_context
 ```
 
 ## Quick Start
@@ -19,11 +19,11 @@ dart pub global activate dart_context
 ### Library Usage
 
 ```dart
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main() async {
   // Open a project
-  final context = await DartContext.open('/path/to/project');
+  final context = await CodeContext.open('/path/to/project');
 
   // Query with DSL
   final result = await context.query('def AuthRepository');
@@ -51,32 +51,32 @@ void main() async {
 
 ```bash
 # Find definition
-dart_context def AuthRepository
+code_context def AuthRepository
 
 # Find references
-dart_context refs login
+code_context refs login
 
 # Get class members
-dart_context members MyClass
+code_context members MyClass
 
 # Search with filters
-dart_context "find Auth* kind:class"
-dart_context "find * kind:method in:lib/auth/"
+code_context "find Auth* kind:class"
+code_context "find * kind:method in:lib/auth/"
 
 # Interactive mode
-dart_context -i
+code_context -i
 
 # Watch mode (shows file changes)
-dart_context -w
+code_context -w
 
 # Watch mode with auto-rerun query
-dart_context -w "find * kind:class"
+code_context -w "find * kind:class"
 
 # JSON output
-dart_context -f json refs login
+code_context -f json refs login
 
 # Force full re-index (skip cache)
-dart_context --no-cache stats
+code_context --no-cache stats
 ```
 
 ## Next Steps

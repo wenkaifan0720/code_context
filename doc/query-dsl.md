@@ -1,6 +1,6 @@
 # Query DSL Reference
 
-dart_context provides a human and LLM-friendly query DSL for navigating your codebase.
+code_context provides a human and LLM-friendly query DSL for navigating your codebase.
 
 ## Commands
 

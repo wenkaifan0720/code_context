@@ -17,6 +17,12 @@ export 'src/query/query_parser.dart';
 export 'src/query/query_executor.dart';
 export 'src/query/query_result.dart';
 
+// Classification and navigation
+export 'src/classification/classification_binding.dart';
+export 'src/classification/classifier.dart';
+export 'src/classification/navigation.dart';
+export 'src/classification/types.dart';
+
 // Language binding interface
 export 'src/language_binding.dart';
 

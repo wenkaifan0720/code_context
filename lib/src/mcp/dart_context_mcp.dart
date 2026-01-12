@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:dart_binding/dart_binding.dart';
 import 'package:dart_mcp/server.dart';
 
-import '../dart_context.dart';
+import '../code_context.dart';
 
 /// Mix this in to any MCPServer to add Dart code intelligence via dart_context.
 ///
@@ -22,8 +22,8 @@ import '../dart_context.dart';
 /// }
 /// ```
 base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
-  /// Cached DartContext instances per project root.
-  final Map<String, DartContext> _contexts = {};
+  /// Cached CodeContext instances per project root.
+  final Map<String, CodeContext> _contexts = {};
 
   /// File watchers for package_config.json per project root.
   final Map<String, StreamSubscription<FileSystemEvent>>
@@ -73,7 +73,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
       await _packageConfigWatchers[root]?.cancel();
       _packageConfigWatchers.remove(root);
       _staleRoots.remove(root);
-      log(LoggingLevel.debug, 'Removed DartContext for: $root');
+      log(LoggingLevel.debug, 'Removed CodeContext for: $root');
     }
 
     // Add contexts for new roots (lazily - will be created on first query)
@@ -138,8 +138,8 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     }
   }
 
-  /// Get or create a DartContext for the given project path.
-  Future<DartContext?> _getContextForPath(String filePath) async {
+  /// Get or create a CodeContext for the given project path.
+  Future<CodeContext?> _getContextForPath(String filePath) async {
     final currentRoots = await roots;
 
     // Find the root that contains this file
@@ -160,8 +160,8 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
 
         // Create a new context
         try {
-          log(LoggingLevel.info, 'Creating DartContext for: ${root.uri}');
-          final context = await DartContext.open(
+          log(LoggingLevel.info, 'Creating CodeContext for: ${root.uri}');
+          final context = await CodeContext.open(
             rootPath,
             watch: true,
             useCache: useCache,
@@ -183,7 +183,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
 
           return context;
         } catch (e) {
-          log(LoggingLevel.error, 'Failed to create DartContext: $e');
+          log(LoggingLevel.error, 'Failed to create CodeContext: $e');
           return null;
         }
       }
@@ -193,7 +193,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
   }
 
   /// Get context for the first available root.
-  Future<DartContext?> _getDefaultContext() async {
+  Future<CodeContext?> _getDefaultContext() async {
     final currentRoots = await roots;
     if (currentRoots.isEmpty) return null;
 
@@ -212,8 +212,8 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     }
 
     try {
-      log(LoggingLevel.info, 'Creating DartContext for: ${firstRoot.uri}');
-      final context = await DartContext.open(
+      log(LoggingLevel.info, 'Creating CodeContext for: ${firstRoot.uri}');
+      final context = await CodeContext.open(
         rootPath,
         watch: true,
         useCache: useCache,
@@ -235,7 +235,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
 
       return context;
     } catch (e) {
-      log(LoggingLevel.error, 'Failed to create DartContext: $e');
+      log(LoggingLevel.error, 'Failed to create CodeContext: $e');
       return null;
     }
   }
@@ -251,7 +251,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
 
     // Get context - use project hint if provided, otherwise use default
     final projectHint = request.arguments?['project'] as String?;
-    DartContext? context;
+    CodeContext? context;
 
     if (projectHint != null) {
       context = await _getContextForPath(projectHint);
@@ -463,13 +463,13 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
 
     // Create fresh context
     try {
-      log(LoggingLevel.info, 'Refreshing DartContext for: $rootPath');
+      log(LoggingLevel.info, 'Refreshing CodeContext for: $rootPath');
       if (fullReindex) {
         log(LoggingLevel.info, 'Full reindex requested (ignoring cache)');
       }
       log(LoggingLevel.info, 'Analyzing project files...');
 
-      final context = await DartContext.open(
+      final context = await CodeContext.open(
         rootPath,
         watch: true,
         useCache: !fullReindex,
@@ -517,7 +517,7 @@ base mixin DartContextSupport on ToolsSupport, RootsTrackingSupport {
     final projectHint = request.arguments?['projectRoot'] as String?;
 
     // Find the context
-    DartContext? context;
+    CodeContext? context;
     String? rootPath;
 
     if (projectHint != null) {

@@ -10,15 +10,15 @@ import 'package:dart_binding/dart_binding.dart' show IndexUpdate;
 
 import 'root_watcher.dart';
 
-/// Lightweight semantic code intelligence for Dart.
+/// Lightweight semantic code intelligence.
 ///
 /// Provides incremental indexing and a query DSL for navigating
-/// Dart codebases.
+/// codebases.
 ///
 /// ## Usage
 ///
 /// ```dart
-/// final context = await DartContext.open('/path/to/project');
+/// final context = await CodeContext.open('/path/to/project');
 ///
 /// // Query with DSL
 /// final result = await context.query('def AuthRepository');
@@ -40,8 +40,8 @@ import 'root_watcher.dart';
 /// - Melos mono repos
 /// - Dart pub workspaces
 /// - Any folder with multiple packages
-class DartContext {
-  DartContext._({
+class CodeContext {
+  CodeContext._({
     required this.rootPath,
     required PackageRegistry registry,
     required QueryExecutor executor,
@@ -74,7 +74,7 @@ class DartContext {
   final RootWatcher? _watcher;
   final DiscoveryResult? _discovery;
 
-  /// Open a Dart project or workspace.
+  /// Open a project or workspace.
   ///
   /// This will:
   /// 1. Recursively discover all packages in the path
@@ -92,15 +92,15 @@ class DartContext {
   /// Example:
   /// ```dart
   /// // Open a single package
-  /// final context = await DartContext.open('/path/to/package');
+  /// final context = await CodeContext.open('/path/to/package');
   ///
   /// // Open a mono repo with cross-package queries
-  /// final context = await DartContext.open(
+  /// final context = await CodeContext.open(
   ///   '/path/to/monorepo',
   ///   loadDependencies: true,
   /// );
   /// ```
-  static Future<DartContext> open(
+  static Future<CodeContext> open(
     String projectPath, {
     bool watch = true,
     bool useCache = true,
@@ -147,7 +147,7 @@ class DartContext {
 
     onProgress?.call('Ready');
 
-    return DartContext._(
+    return CodeContext._(
       rootPath: discovery.rootPath,
       registry: registry,
       executor: executor,
@@ -238,7 +238,7 @@ class DartContext {
   /// without the [loadDependencies] option:
   ///
   /// ```dart
-  /// final context = await DartContext.open('/path/to/project');
+  /// final context = await CodeContext.open('/path/to/project');
   /// await context.loadDependencies(); // Enable later
   /// ```
   Future<DependencyLoadResult> loadDependencies() async {
@@ -258,6 +258,10 @@ class DartContext {
     _registry.dispose();
   }
 }
+
+/// Alias for backward compatibility.
+@Deprecated('Use CodeContext instead')
+typedef DartContext = CodeContext;
 
 /// Extension to merge streams.
 extension _StreamMerge<T> on Stream<T> {

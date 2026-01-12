@@ -1,13 +1,13 @@
 // ignore_for_file: avoid_print
 
-/// Example usage of dart_context.
+/// Example usage of code_context.
 ///
-/// Run with: `dart run example/example.dart /path/to/dart/project`
+/// Run with: `dart run example/example.dart /path/to/project`
 library;
 
 import 'dart:io';
 
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
@@ -20,8 +20,8 @@ Future<void> main(List<String> args) async {
   final projectPath = args.first;
   print('Opening project: $projectPath\n');
 
-  // Open a Dart project
-  final context = await DartContext.open(projectPath);
+  // Open a project
+  final context = await CodeContext.open(projectPath);
 
   try {
     // ═══════════════════════════════════════════════════════════════════════

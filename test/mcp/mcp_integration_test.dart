@@ -6,7 +6,7 @@ import 'package:dart_mcp/server.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 
-import 'package:dart_context/dart_context_mcp.dart';
+import 'package:code_context/code_context_mcp.dart';
 
 void main() {
   group('MCP Integration', () {

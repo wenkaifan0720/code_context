@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main(List<String> arguments) async {
   // Check for subcommands first
@@ -24,6 +24,9 @@ void main(List<String> arguments) async {
       case 'list-packages':
         await _listPackages(arguments.skip(1).toList());
         return;
+      case 'generate-docs':
+        await _generateDocs(arguments.skip(1).toList());
+        return;
     }
   }
 
@@ -40,6 +43,11 @@ void main(List<String> arguments) async {
       help: 'Output format: text or json',
       defaultsTo: 'text',
       allowed: ['text', 'json'],
+    )
+    ..addOption(
+      'output',
+      abbr: 'o',
+      help: 'Write output to file instead of stdout',
     )
     ..addFlag(
       'watch',
@@ -86,6 +94,7 @@ void main(List<String> arguments) async {
 
   final projectPath = args['project'] as String;
   final format = args['format'] as String;
+  final outputPath = args['output'] as String?;
   final watch = args['watch'] as bool;
   final interactive = args['interactive'] as bool;
   final noCache = args['no-cache'] as bool;
@@ -108,10 +117,10 @@ void main(List<String> arguments) async {
     stderr.writeln('Loading pre-indexed dependencies...');
   }
 
-  DartContext? context;
+  CodeContext? context;
   try {
     final stopwatch = Stopwatch()..start();
-    context = await DartContext.open(
+    context = await CodeContext.open(
       projectPath,
       watch: watch || interactive,
       useCache: !noCache,
@@ -140,12 +149,12 @@ void main(List<String> arguments) async {
     } else if (args.rest.isEmpty) {
       // No query provided, show stats
       final result = await context.query('stats');
-      _printResult(result, format);
+      _outputResult(result, format, outputPath);
     } else {
       // Execute the query from command line
       final query = args.rest.join(' ');
       final result = await context.query(query);
-      _printResult(result, format);
+      _outputResult(result, format, outputPath);
     }
   } catch (e, st) {
     stderr.writeln('Error: $e');
@@ -160,15 +169,16 @@ void main(List<String> arguments) async {
 
 void _printUsage(ArgParser parser) {
   stdout.writeln(
-      'dart_context - Lightweight semantic code intelligence for Dart');
+      'code_context - Lightweight semantic code intelligence');
   stdout.writeln('');
-  stdout.writeln('Usage: dart_context [options] <query>');
-  stdout.writeln('       dart_context <subcommand> [args]');
+  stdout.writeln('Usage: code_context [options] <query>');
+  stdout.writeln('       code_context <subcommand> [args]');
   stdout.writeln('');
   stdout.writeln('Options:');
   stdout.writeln(parser.usage);
   stdout.writeln('');
   stdout.writeln('Subcommands:');
+  stdout.writeln('  generate-docs [opts]   Generate documentation to docs/');
   stdout.writeln('  index-sdk <sdk-path>   Pre-index the Dart SDK');
   stdout.writeln('  index-flutter [path]   Pre-index Flutter packages');
   stdout.writeln('  index-deps [path]      Pre-index all pub dependencies');
@@ -194,6 +204,8 @@ void _printUsage(ArgParser parser) {
   stdout.writeln('  grep <pattern>         Search source code');
   stdout.writeln('  imports <file>         File imports');
   stdout.writeln('  exports <path>         File/directory exports');
+  stdout.writeln('  classify               Layer/feature classification');
+  stdout.writeln('  storyboard             Navigation flow diagram');
   stdout.writeln('  files                  List indexed files');
   stdout.writeln('  stats                  Index statistics');
   stdout.writeln('');
@@ -217,25 +229,25 @@ void _printUsage(ArgParser parser) {
   stdout.writeln('  grep TODO | refs         Process results through pipes');
   stdout.writeln('');
   stdout.writeln('Examples:');
-  stdout.writeln('  dart_context def AuthRepository');
-  stdout.writeln('  dart_context refs login');
-  stdout.writeln('  dart_context "find Auth* kind:class"');
-  stdout.writeln('  dart_context "grep TODO -c"');
-  stdout.writeln('  dart_context "grep /TODO|FIXME/ -l"');
-  stdout.writeln('  dart_context "find *Service | members"');
-  stdout.writeln('  dart_context -i                    # Interactive mode');
-  stdout.writeln('  dart_context -w                    # Watch mode');
+  stdout.writeln('  code_context def AuthRepository');
+  stdout.writeln('  code_context refs login');
+  stdout.writeln('  code_context "find Auth* kind:class"');
+  stdout.writeln('  code_context "grep TODO -c"');
+  stdout.writeln('  code_context "grep /TODO|FIXME/ -l"');
+  stdout.writeln('  code_context "find *Service | members"');
+  stdout.writeln('  code_context -i                    # Interactive mode');
+  stdout.writeln('  code_context -w                    # Watch mode');
   stdout.writeln(
-      '  dart_context -w "find * kind:class"  # Watch + re-run on changes');
+      '  code_context -w "find * kind:class"  # Watch + re-run on changes');
   stdout.writeln('');
   stdout.writeln('Pre-indexing dependencies (for cross-package queries):');
-  stdout.writeln('  dart_context index-sdk /path/to/dart-sdk');
-  stdout.writeln('  dart_context index-deps');
-  stdout.writeln('  dart_context --with-deps "hierarchy MyClass"');
+  stdout.writeln('  code_context index-sdk /path/to/dart-sdk');
+  stdout.writeln('  code_context index-deps');
+  stdout.writeln('  code_context --with-deps "hierarchy MyClass"');
   stdout.writeln('');
   stdout.writeln('Mono repo / workspace support:');
-  stdout.writeln('  dart_context list-packages /path/to/monorepo');
-  stdout.writeln('  dart_context -p /path/to/monorepo stats');
+  stdout.writeln('  code_context list-packages /path/to/monorepo');
+  stdout.writeln('  code_context -p /path/to/monorepo stats');
 }
 
 void _printResult(QueryResult result, String format) {
@@ -246,8 +258,28 @@ void _printResult(QueryResult result, String format) {
   }
 }
 
+/// Output result to stdout or a file.
+Future<void> _outputResult(
+  QueryResult result,
+  String format,
+  String? outputPath,
+) async {
+  final content = format == 'json'
+      ? const JsonEncoder.withIndent('  ').convert(result.toJson())
+      : result.toText();
+
+  if (outputPath != null) {
+    final file = File(outputPath);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(content);
+    stderr.writeln('Written to: $outputPath');
+  } else {
+    stdout.writeln(content);
+  }
+}
+
 Future<void> _runWatch(
-  DartContext context,
+  CodeContext context,
   String format,
   String? query,
 ) async {
@@ -308,7 +340,7 @@ Future<void> _runWatch(
   stderr.writeln('Watch mode stopped.');
 }
 
-Future<void> _runInteractive(DartContext context, String format) async {
+Future<void> _runInteractive(CodeContext context, String format) async {
   stdout.writeln('');
   stdout.writeln('Interactive mode. Type "help" for commands, "quit" to exit.');
   stdout.writeln('');
@@ -408,11 +440,11 @@ Future<void> _runInteractive(DartContext context, String format) async {
 /// Index the Dart/Flutter SDK for cross-package queries.
 Future<void> _indexSdk(List<String> args) async {
   if (args.isEmpty) {
-    stderr.writeln('Usage: dart_context index-sdk <sdk-path>');
+    stderr.writeln('Usage: code_context index-sdk <sdk-path>');
     stderr.writeln('');
     stderr.writeln('Example:');
-    stderr.writeln('  dart_context index-sdk /opt/flutter/bin/cache/dart-sdk');
-    stderr.writeln('  dart_context index-sdk \$(dirname \$(which dart))/..');
+    stderr.writeln('  code_context index-sdk /opt/flutter/bin/cache/dart-sdk');
+    stderr.writeln('  code_context index-sdk \$(dirname \$(which dart))/..');
     exit(1);
   }
 
@@ -480,15 +512,15 @@ Future<void> _indexFlutter(List<String> args) async {
   }
 
   if (flutterPath == null || !await Directory(flutterPath).exists()) {
-    stderr.writeln('Usage: dart_context index-flutter [flutter-path]');
+    stderr.writeln('Usage: code_context index-flutter [flutter-path]');
     stderr.writeln('');
     stderr.writeln(
         'If no path is provided, uses FLUTTER_ROOT environment variable');
     stderr.writeln('or tries to find Flutter from PATH.');
     stderr.writeln('');
     stderr.writeln('Example:');
-    stderr.writeln('  dart_context index-flutter');
-    stderr.writeln('  dart_context index-flutter /opt/flutter');
+    stderr.writeln('  code_context index-flutter');
+    stderr.writeln('  code_context index-flutter /opt/flutter');
     exit(1);
   }
 
@@ -696,9 +728,9 @@ Future<void> _listIndexes() async {
   }
   stdout.writeln('');
 
-  stdout.writeln('To index SDK: dart_context index-sdk <path>');
-  stdout.writeln('To index Flutter: dart_context index-flutter');
-  stdout.writeln('To index deps: dart_context index-deps');
+  stdout.writeln('To index SDK: code_context index-sdk <path>');
+  stdout.writeln('To index Flutter: code_context index-flutter');
+  stdout.writeln('To index deps: code_context index-deps');
 }
 
 /// List discovered packages in a directory.
@@ -742,4 +774,443 @@ Future<void> _listPackages(List<String> args) async {
   } else {
     stdout.writeln('Cache: (not initialized)');
   }
+}
+
+/// Generate documentation files for a project.
+///
+/// Creates:
+/// - docs/architecture-*.md - Layer/feature/module classification
+/// - docs/navigation.md - Storyboard/navigation flow
+/// - docs/index.md - Overview with links to other docs
+Future<void> _generateDocs(List<String> args) async {
+  final parser = ArgParser()
+    ..addOption(
+      'project',
+      abbr: 'p',
+      help: 'Path to the Dart project',
+      defaultsTo: '.',
+    )
+    ..addOption(
+      'output',
+      abbr: 'o',
+      help: 'Output directory for documentation',
+      defaultsTo: 'docs',
+    )
+    ..addOption(
+      'format',
+      abbr: 'f',
+      help: 'Output format: text (markdown) or json',
+      defaultsTo: 'text',
+      allowed: ['text', 'json'],
+    )
+    ..addOption(
+      'mode',
+      abbr: 'm',
+      help: 'Documentation organization mode',
+      defaultsTo: 'all',
+      allowed: ['all', 'layer', 'feature', 'module'],
+      allowedHelp: {
+        'all': 'Generate all views (layer, feature, module)',
+        'layer': 'Group by architectural layer (UI → Service → Data)',
+        'feature': 'Group by feature/user journey (auth, products, etc.)',
+        'module': 'Group by package/module structure',
+      },
+    )
+    ..addFlag(
+      'help',
+      abbr: 'h',
+      help: 'Show help',
+      negatable: false,
+    );
+
+  ArgResults parsed;
+  try {
+    parsed = parser.parse(args);
+  } catch (e) {
+    stderr.writeln('Error: $e');
+    _printGenerateDocsUsage(parser);
+    exit(1);
+  }
+
+  if (parsed['help'] as bool) {
+    _printGenerateDocsUsage(parser);
+    exit(0);
+  }
+
+  // Support both positional arg and --project option
+  var projectPath = parsed['project'] as String;
+  if (parsed.rest.isNotEmpty && projectPath == '.') {
+    projectPath = parsed.rest.first;
+  }
+  final outputDir = parsed['output'] as String;
+  final format = parsed['format'] as String;
+  final mode = parsed['mode'] as String;
+  final ext = format == 'json' ? 'json' : 'md';
+
+  // Validate project path
+  final pubspecFile = File('$projectPath/pubspec.yaml');
+  if (!await pubspecFile.exists()) {
+    final discovery = await PackageDiscovery().discoverPackages(projectPath);
+    if (discovery.packages.isEmpty) {
+      stderr.writeln('Error: No Dart packages found in $projectPath');
+      exit(1);
+    }
+  }
+
+  stderr.writeln('Generating documentation for: $projectPath');
+  stderr.writeln('Output directory: $outputDir');
+  stderr.writeln('Mode: $mode');
+  stderr.writeln('');
+
+  CodeContext? context;
+  try {
+    final stopwatch = Stopwatch()..start();
+    context = await CodeContext.open(projectPath, useCache: true);
+    stopwatch.stop();
+    stderr.writeln(
+      'Indexed ${context.stats['files']} files, '
+      '${context.stats['symbols']} symbols '
+      '(${stopwatch.elapsedMilliseconds}ms)',
+    );
+    stderr.writeln('');
+
+    // Create output directory
+    final docsDir = Directory(
+      projectPath == '.' ? outputDir : '$projectPath/$outputDir',
+    );
+    await docsDir.create(recursive: true);
+
+    final createdFiles = <String>[];
+
+    // Generate layer-based architecture documentation
+    if (mode == 'all' || mode == 'layer') {
+      stderr.write('Generating architecture-layer.$ext... ');
+      final classifyResult = await context.query('classify');
+      final archFile = File('${docsDir.path}/architecture-layer.$ext');
+      final archContent = format == 'json'
+          ? const JsonEncoder.withIndent('  ').convert(classifyResult.toJson())
+          : _wrapArchitectureDoc(classifyResult.toText(), 'Layer');
+      await archFile.writeAsString(archContent);
+      createdFiles.add('${docsDir.path}/architecture-layer.$ext');
+      stderr.writeln('✓');
+    }
+
+    // Generate feature-based architecture documentation
+    if (mode == 'all' || mode == 'feature') {
+      stderr.write('Generating architecture-feature.$ext... ');
+      final classifyResult = await context.query('classify');
+      final archFile = File('${docsDir.path}/architecture-feature.$ext');
+      final archContent = format == 'json'
+          ? const JsonEncoder.withIndent('  ')
+              .convert(_groupByFeature(classifyResult.toJson()))
+          : _wrapArchitectureDoc(
+              _formatByFeature(classifyResult.toJson()),
+              'Feature',
+            );
+      await archFile.writeAsString(archContent);
+      createdFiles.add('${docsDir.path}/architecture-feature.$ext');
+      stderr.writeln('✓');
+    }
+
+    // Generate module-based architecture documentation (for monorepos)
+    if (mode == 'all' || mode == 'module') {
+      stderr.write('Generating architecture-module.$ext... ');
+      final archContent = format == 'json'
+          ? const JsonEncoder.withIndent('  ')
+              .convert(_generateModuleJson(context))
+          : _wrapArchitectureDoc(
+              _formatByModule(context),
+              'Module',
+            );
+      final archFile = File('${docsDir.path}/architecture-module.$ext');
+      await archFile.writeAsString(archContent);
+      createdFiles.add('${docsDir.path}/architecture-module.$ext');
+      stderr.writeln('✓');
+    }
+
+    // Generate navigation documentation
+    stderr.write('Generating navigation.md... ');
+    final storyboardResult = await context.query('storyboard');
+    final navFile = File('${docsDir.path}/navigation.md');
+    final navContent = _wrapNavigationDoc(storyboardResult.toText());
+    await navFile.writeAsString(navContent);
+    createdFiles.add('${docsDir.path}/navigation.md');
+    stderr.writeln('✓');
+
+    // Generate index/overview
+    stderr.write('Generating index.$ext... ');
+    final indexFile = File('${docsDir.path}/index.$ext');
+    if (format == 'json') {
+      final indexJson = {
+        'type': 'docs_index',
+        'generated_at': DateTime.now().toIso8601String(),
+        'mode': mode,
+        'files': createdFiles.map((f) => f.split('/').last).toList(),
+        'stats': context.stats,
+      };
+      await indexFile.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(indexJson),
+      );
+    } else {
+      await indexFile.writeAsString(_generateIndexDoc(context, mode: mode));
+    }
+    createdFiles.add('${docsDir.path}/index.$ext');
+    stderr.writeln('✓');
+
+    stderr.writeln('');
+    stderr.writeln('Documentation generated successfully!');
+    stderr.writeln('');
+    stderr.writeln('Files created:');
+    for (final file in createdFiles) {
+      stderr.writeln('  $file');
+    }
+  } catch (e, st) {
+    stderr.writeln('Error: $e');
+    if (Platform.environment['DEBUG'] != null) {
+      stderr.writeln(st);
+    }
+    exit(1);
+  } finally {
+    await context?.dispose();
+  }
+}
+
+void _printGenerateDocsUsage(ArgParser parser) {
+  stdout.writeln('Generate documentation for a Dart/Flutter project.');
+  stdout.writeln('');
+  stdout.writeln('Usage: code_context generate-docs [options]');
+  stdout.writeln('');
+  stdout.writeln('Options:');
+  stdout.writeln(parser.usage);
+  stdout.writeln('');
+  stdout.writeln('Generated files (mode=all):');
+  stdout.writeln('  index.md                - Overview with links to other docs');
+  stdout.writeln('  architecture-layer.md   - Symbols grouped by layer (UI/Service/Data)');
+  stdout.writeln('  architecture-feature.md - Symbols grouped by feature (auth/products)');
+  stdout.writeln('  architecture-module.md  - Symbols grouped by package/module');
+  stdout.writeln('  navigation.md           - Screen storyboard and navigation flow');
+  stdout.writeln('');
+  stdout.writeln('Examples:');
+  stdout.writeln('  code_context generate-docs');
+  stdout.writeln('  code_context generate-docs -p ./my_app -o generated_docs');
+  stdout.writeln('  code_context generate-docs --mode feature');
+  stdout.writeln('  code_context generate-docs --format json');
+}
+
+String _wrapArchitectureDoc(String content, String viewType) {
+  final descriptions = {
+    'Layer': 'Symbols organized by architectural layer (UI → Service → Data → Model).',
+    'Feature': 'Symbols organized by feature/domain (auth, products, settings, etc.).',
+    'Module': 'Symbols organized by package/module structure.',
+  };
+  
+  return '''# Architecture ($viewType View)
+
+> Auto-generated by code_context. Last updated: ${DateTime.now().toIso8601String()}
+
+${descriptions[viewType] ?? 'Architectural organization of the codebase.'}
+
+$content
+
+---
+*Generated by [code_context](https://github.com/user/code_context)*
+''';
+}
+
+String _wrapNavigationDoc(String content) {
+  return '''# Navigation Flow
+
+> Auto-generated by code_context. Last updated: ${DateTime.now().toIso8601String()}
+
+Screen-to-screen navigation structure of the application.
+
+$content
+
+---
+*Generated by [code_context](https://github.com/user/code_context)*
+''';
+}
+
+String _generateIndexDoc(CodeContext context, {String mode = 'all'}) {
+  final stats = context.stats;
+  
+  final archLinks = <String>[];
+  if (mode == 'all' || mode == 'layer') {
+    archLinks.add('- [Architecture (Layer)](./architecture-layer.md) - Grouped by architectural layer');
+  }
+  if (mode == 'all' || mode == 'feature') {
+    archLinks.add('- [Architecture (Feature)](./architecture-feature.md) - Grouped by feature/domain');
+  }
+  if (mode == 'all' || mode == 'module') {
+    archLinks.add('- [Architecture (Module)](./architecture-module.md) - Grouped by package/module');
+  }
+  
+  return '''# Project Documentation
+
+> Auto-generated by code_context. Last updated: ${DateTime.now().toIso8601String()}
+
+## Overview
+
+- Files: ${stats['files']}
+- Symbols: ${stats['symbols']}
+
+## Documentation
+
+### Architecture Views
+
+${archLinks.join('\n')}
+
+### Navigation
+
+- [Navigation](./navigation.md) - Screen storyboard and navigation flow
+
+## Quick Start
+
+To regenerate this documentation:
+
+```bash
+code_context generate-docs
+```
+
+To generate a specific view:
+
+```bash
+code_context generate-docs --mode layer   # Layer view only
+code_context generate-docs --mode feature # Feature view only
+code_context generate-docs --mode module  # Module view only
+```
+
+To generate JSON output:
+
+```bash
+code_context generate-docs --format json
+```
+
+---
+*Generated by [code_context](https://github.com/user/code_context)*
+''';
+}
+
+/// Group classification results by feature instead of layer.
+Map<String, dynamic> _groupByFeature(Map<String, dynamic> json) {
+  if (json['type'] != 'classify') return json;
+  
+  final byFeature = <String, List<Map<String, dynamic>>>{};
+  final classifications = json['classifications'] as List<dynamic>? ?? [];
+  
+  for (final c in classifications) {
+    final classification = c as Map<String, dynamic>;
+    final feature = classification['feature'] as String? ?? 'uncategorized';
+    byFeature.putIfAbsent(feature, () => []).add(classification);
+  }
+  
+  return {
+    'type': 'classify',
+    'view': 'feature',
+    'generated_at': DateTime.now().toIso8601String(),
+    'features': byFeature.map((feature, items) => MapEntry(feature, {
+      'count': items.length,
+      'symbols': items,
+    })),
+  };
+}
+
+/// Format classification results grouped by feature as markdown.
+String _formatByFeature(Map<String, dynamic> json) {
+  if (json['type'] != 'classify') return json.toString();
+  
+  final byFeature = <String, List<Map<String, dynamic>>>{};
+  final classifications = json['classifications'] as List<dynamic>? ?? [];
+  
+  for (final c in classifications) {
+    final classification = c as Map<String, dynamic>;
+    final feature = classification['feature'] as String? ?? 'uncategorized';
+    byFeature.putIfAbsent(feature, () => []).add(classification);
+  }
+  
+  final buffer = StringBuffer();
+  
+  // Sort features alphabetically
+  final sortedFeatures = byFeature.keys.toList()..sort();
+  
+  for (final feature in sortedFeatures) {
+    final items = byFeature[feature]!;
+    buffer.writeln('## $feature (${items.length})');
+    buffer.writeln('');
+    
+    for (final item in items) {
+      final name = item['name'] ?? 'unknown';
+      final layer = item['layer'] ?? 'unknown';
+      final file = item['file'] ?? 'external';
+      buffer.writeln('- $name [$layer]');
+      buffer.writeln('  $file');
+    }
+    buffer.writeln('');
+  }
+  
+  return buffer.toString();
+}
+
+/// Generate module-based JSON for monorepo structure.
+Map<String, dynamic> _generateModuleJson(CodeContext context) {
+  final localPackages = context.registry.localPackages.values.toList();
+  
+  if (localPackages.isEmpty) {
+    // Single package mode
+    final stats = context.stats;
+    return {
+      'type': 'modules',
+      'view': 'module',
+      'generated_at': DateTime.now().toIso8601String(),
+      'packages': [
+        {
+          'name': context.rootPath.split('/').last,
+          'path': context.rootPath,
+          'files': stats['files'],
+          'symbols': stats['symbols'],
+        },
+      ],
+    };
+  }
+  
+  return {
+    'type': 'modules',
+    'view': 'module',
+    'generated_at': DateTime.now().toIso8601String(),
+    'packages': localPackages.map((pkg) {
+      final index = pkg.index;
+      return {
+        'name': pkg.name,
+        'path': pkg.path,
+        'files': index.files.length,
+        'symbols': index.allSymbols.length,
+      };
+    }).toList(),
+  };
+}
+
+/// Format module structure as markdown.
+String _formatByModule(CodeContext context) {
+  final localPackages = context.registry.localPackages.values.toList();
+  final buffer = StringBuffer();
+  
+  if (localPackages.isEmpty) {
+    // Single package mode
+    final stats = context.stats;
+    buffer.writeln('## ${context.rootPath.split('/').last}');
+    buffer.writeln('');
+    buffer.writeln('- Files: ${stats['files']}');
+    buffer.writeln('- Symbols: ${stats['symbols']}');
+  } else {
+    buffer.writeln('## Packages (${localPackages.length})');
+    buffer.writeln('');
+    
+    for (final pkg in localPackages) {
+      final index = pkg.index;
+      buffer.writeln('- ${pkg.name}');
+      buffer.writeln('  Files: ${index.files.length}, Symbols: ${index.allSymbols.length}');
+    }
+  }
+  
+  return buffer.toString();
 }

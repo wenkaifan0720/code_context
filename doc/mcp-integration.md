@@ -1,6 +1,6 @@
 # MCP Integration
 
-dart_context provides full MCP (Model Context Protocol) support for AI agents.
+code_context provides full MCP (Model Context Protocol) support for AI agents.
 
 ## Using with Cursor
 
@@ -9,10 +9,10 @@ A ready-to-use MCP server is included. Add to `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "dart_context": {
+    "code_context": {
       "type": "stdio",
       "command": "dart",
-      "args": ["run", "/path/to/dart_context/bin/mcp_server.dart"]
+      "args": ["run", "/path/to/code_context/bin/mcp_server.dart"]
     }
   }
 }
@@ -35,14 +35,14 @@ Restart Cursor, then ask Claude to use the tools:
 
 ## Custom MCP Server
 
-Add `DartContextSupport` to your own MCP server:
+Add `CodeContextSupport` to your own MCP server:
 
 ```dart
-import 'package:dart_context/dart_context_mcp.dart';
+import 'package:code_context/code_context_mcp.dart';
 import 'package:dart_mcp/server.dart';
 
 base class MyServer extends MCPServer 
-    with LoggingSupport, ToolsSupport, RootsTrackingSupport, DartContextSupport {
+    with LoggingSupport, ToolsSupport, RootsTrackingSupport, CodeContextSupport {
   // Your server implementation
 }
 ```

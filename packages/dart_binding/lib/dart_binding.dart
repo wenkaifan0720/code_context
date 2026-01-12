@@ -32,3 +32,5 @@ export 'src/utils/package_config.dart';
 export 'src/utils/pubspec_utils.dart';
 export 'src/version.dart';
 
+// Classification (Dart/Flutter-specific)
+export 'src/classification/classification.dart';

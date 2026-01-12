@@ -8,7 +8,7 @@ import 'analyzer_adapter.dart';
 ///
 /// Usage in hologram_server:
 /// ```dart
-/// import 'package:dart_context/dart_context.dart';
+/// import 'package:code_context/code_context.dart';
 ///
 /// // In AnalyzerService or wherever you have access to HologramAnalyzer
 /// class DartContextService extends FluxonService {
@@ -96,7 +96,7 @@ class HologramAnalyzerAdapter implements AnalyzerAdapter {
 /// Usage:
 /// ```dart
 /// import 'package:fs_watcher/fs_watcher.dart';
-/// import 'package:dart_context/dart_context.dart';
+/// import 'package:code_context/code_context.dart';
 ///
 /// final fileChange = FileChange(
 ///   path: event.path,

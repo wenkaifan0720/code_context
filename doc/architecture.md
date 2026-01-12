@@ -2,11 +2,11 @@
 
 ## Overview
 
-dart_context provides lightweight semantic code intelligence for Dart projects. It uses SCIP (Semantic Code Intelligence Protocol) for standardized code indexing.
+code_context provides lightweight semantic code intelligence for Dart projects. It uses SCIP (Semantic Code Intelligence Protocol) for standardized code indexing.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           DartContext                                   │
+│                           CodeContext                                   │
 │  Entry point: open(), query(), dispose()                                │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
@@ -38,7 +38,7 @@ dart_context provides lightweight semantic code intelligence for Dart projects. 
 The project is organized as a Dart pub workspace:
 
 ```
-dart_context/
+code_context/
 ├── packages/
 │   ├── scip_server/          # Language-agnostic SCIP protocol core
 │   │   ├── lib/src/
@@ -55,14 +55,14 @@ dart_context/
 │       │   └── ...           # Incremental indexer, package discovery
 │       └── pubspec.yaml
 │
-├── lib/                      # Root package (dart_context)
-│   ├── dart_context.dart     # Re-exports for public API
+├── lib/                      # Root package (code_context)
+│   ├── code_context.dart     # Re-exports for public API
 │   └── src/
-│       ├── dart_context.dart # Main DartContext class
+│       ├── code_context.dart # Main CodeContext class
 │       └── mcp/              # MCP server support
 │
 ├── bin/
-│   ├── dart_context.dart     # CLI entry point
+│   ├── code_context.dart     # CLI entry point
 │   └── mcp_server.dart       # MCP server entry point
 │
 └── pubspec.yaml              # Workspace root
@@ -94,7 +94,7 @@ dart_context/
 
 ### Indexing Flow
 
-1. **Cache Check**: On `open()`, looks for valid cache in `.dart_context/` directory
+1. **Cache Check**: On `open()`, looks for valid cache in `.code_context/` directory
 2. **Initial/Incremental Index**: Full scan if no cache, or only changed files if cache exists
 3. **File Watching**: Uses filesystem events to detect changes
 4. **Incremental Updates**: Only re-analyzes changed files (via SHA-256 hash comparison)
@@ -108,19 +108,19 @@ dart_context/
 
 ### Caching
 
-The index is cached in `.dart_context/` within your project:
+The index is cached in `.code_context/` within your project:
 
 ```
 your_project/
-└── .dart_context/
+└── .code_context/
     ├── index.scip         # Serialized SCIP protobuf index
     └── manifest.json      # File hashes for cache validation
 ```
 
-Global pre-computed indexes are stored in `~/.dart_context/`:
+Global pre-computed indexes are stored in `~/.code_context/`:
 
 ```
-~/.dart_context/
+~/.code_context/
 ├── sdk/
 │   └── 3.2.0/index.scip             # Dart SDK
 ├── flutter/

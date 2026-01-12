@@ -5,7 +5,7 @@ When integrating with an existing analyzer (e.g., HologramAnalyzer), you can avo
 ## Basic Adapter Usage
 
 ```dart
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 
 // Create an adapter that wraps your existing analyzer
@@ -43,7 +43,7 @@ print(result.toText());
 
 ```dart
 @ServiceContract(remote: true)
-class DartContextService extends FluxonService {
+class CodeContextService extends FluxonService {
   late final IncrementalScipIndexer _indexer;
   
   @override

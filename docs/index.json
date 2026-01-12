@@ -1,0 +1,25 @@
+{
+  "type": "docs_index",
+  "generated_at": "2026-01-12T16:32:08.026110",
+  "files": [
+    "architecture.json",
+    "navigation.json"
+  ],
+  "stats": {
+    "files": 89,
+    "symbols": 2337,
+    "references": 36437,
+    "packages": 2,
+    "localPackageNames": [
+      "code_context",
+      "sample_flutter_app"
+    ],
+    "sdkLoaded": false,
+    "sdkVersion": null,
+    "flutterVersion": null,
+    "flutterPackagesLoaded": 0,
+    "hostedPackagesLoaded": 0,
+    "hostedPackageNames": [],
+    "gitPackagesLoaded": 0
+  }
+}

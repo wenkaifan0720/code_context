@@ -1,0 +1,1187 @@
+{
+  "type": "classify",
+  "count": 138,
+  "classifications": [
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/mcp/`mcp_integration_test.dart`/TestEnvironment#",
+      "name": "TestEnvironment",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "test/mcp/mcp_integration_test.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/mcp/`mcp_integration_test.dart`/TestMCPClient#",
+      "name": "TestMCPClient",
+      "layer": "data",
+      "feature": "test_mcp",
+      "confidence": 1.0,
+      "file": "test/mcp/mcp_integration_test.dart",
+      "signals": [
+        "name pattern → SymbolLayer.data",
+        "feature: test_mcp"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/mcp/`mcp_integration_test.dart`/TestDartContextServer#",
+      "name": "TestDartContextServer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "test/mcp/mcp_integration_test.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/fixtures/sample_flutter_app/lib/core/utils/`string_utils.dart`/StringUtils#",
+      "name": "StringUtils",
+      "layer": "util",
+      "confidence": 1.0,
+      "file": "test/fixtures/sample_flutter_app/lib/core/utils/string_utils.dart",
+      "signals": [
+        "name pattern → SymbolLayer.util",
+        "file path → SymbolLayer.util"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/fixtures/sample_flutter_app/lib/core/`api_client.dart`/ApiClient#",
+      "name": "ApiClient",
+      "layer": "data",
+      "feature": "api",
+      "confidence": 0.5714285714285714,
+      "file": "test/fixtures/sample_flutter_app/lib/core/api_client.dart",
+      "signals": [
+        "name pattern → SymbolLayer.data",
+        "file path → SymbolLayer.util",
+        "feature: api"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/fixtures/sample_flutter_app/lib/features/products/repositories/`product_repository.dart`/ProductRepository#",
+      "name": "ProductRepository",
+      "layer": "data",
+      "feature": "products",
+      "confidence": 1.0,
+      "file": "test/fixtures/sample_flutter_app/lib/features/products/repositories/product_repository.dart",
+      "signals": [
+        "name pattern → SymbolLayer.data",
+        "file path → SymbolLayer.data",
+        "feature: products"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/fixtures/sample_flutter_app/lib/features/products/models/`product.dart`/Product#",
+      "name": "Product",
+      "layer": "model",
+      "feature": "products",
+      "confidence": 1.0,
+      "file": "test/fixtures/sample_flutter_app/lib/features/products/models/product.dart",
+      "signals": [
+        "file path → SymbolLayer.model",
+        "feature: products"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/fixtures/sample_flutter_app/lib/features/auth/repositories/`auth_repository.dart`/AuthRepository#",
+      "name": "AuthRepository",
+      "layer": "data",
+      "feature": "auth",
+      "confidence": 1.0,
+      "file": "test/fixtures/sample_flutter_app/lib/features/auth/repositories/auth_repository.dart",
+      "signals": [
+        "name pattern → SymbolLayer.data",
+        "file path → SymbolLayer.data",
+        "feature: auth"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 test/fixtures/sample_flutter_app/lib/features/auth/models/`user.dart`/User#",
+      "name": "User",
+      "layer": "model",
+      "feature": "auth",
+      "confidence": 1.0,
+      "file": "test/fixtures/sample_flutter_app/lib/features/auth/models/user.dart",
+      "signals": [
+        "file path → SymbolLayer.model",
+        "feature: auth"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 bin/`mcp_server.dart`/CodeContextServer#",
+      "name": "CodeContextServer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "bin/mcp_server.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`dart_binding.dart`/DartBinding#",
+      "name": "DartBinding",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/dart_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`dart_binding.dart`/DartPackageIndexer#",
+      "name": "DartPackageIndexer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/dart_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`index_cache.dart`/IndexCache#",
+      "name": "IndexCache",
+      "layer": "data",
+      "confidence": 1.0,
+      "file": "packages/dart_binding/lib/src/index_cache.dart",
+      "signals": [
+        "name pattern → SymbolLayer.data"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`index_cache.dart`/CachedIndex#",
+      "name": "CachedIndex",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/index_cache.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`index_cache.dart`/FileChanges#",
+      "name": "FileChanges",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/index_cache.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`external_index_builder.dart`/ExternalIndexBuilder#",
+      "name": "ExternalIndexBuilder",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/external_index_builder.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`external_index_builder.dart`/IndexResult#",
+      "name": "IndexResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/external_index_builder.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`external_index_builder.dart`/PackageIndexResult#",
+      "name": "PackageIndexResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/external_index_builder.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`external_index_builder.dart`/BatchIndexResult#",
+      "name": "BatchIndexResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/external_index_builder.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`external_index_builder.dart`/FlutterIndexResult#",
+      "name": "FlutterIndexResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/external_index_builder.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/cache/`cache_paths.dart`/CachePaths#",
+      "name": "CachePaths",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/cache/cache_paths.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/cache/`cache_paths.dart`/GitPackageKey#",
+      "name": "GitPackageKey",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/cache/cache_paths.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry.dart`/LocalPackageIndex#",
+      "name": "LocalPackageIndex",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_registry.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry.dart`/ExternalPackageIndex#",
+      "name": "ExternalPackageIndex",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_registry.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry.dart`/ExternalPackageType#",
+      "name": "ExternalPackageType",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_registry.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry.dart`/PackageRegistry#",
+      "name": "PackageRegistry",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_registry.dart",
+      "signals": []
+    },
+    {
+      "symbol": "local 170",
+      "name": "local 170",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    },
+    {
+      "symbol": "local 171",
+      "name": "local 171",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    },
+    {
+      "symbol": "local 187",
+      "name": "local 187",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry.dart`/IndexScope#",
+      "name": "IndexScope",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_registry.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry.dart`/DependencyLoadResult#",
+      "name": "DependencyLoadResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_registry.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_discovery.dart`/LocalPackage#",
+      "name": "LocalPackage",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_discovery.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_discovery.dart`/DiscoveryResult#",
+      "name": "DiscoveryResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_discovery.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_discovery.dart`/PackageDiscovery#",
+      "name": "PackageDiscovery",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/package_discovery.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/utils/`pubspec_utils.dart`/PackageInfo#",
+      "name": "PackageInfo",
+      "layer": "model",
+      "confidence": 0.5714285714285714,
+      "file": "packages/dart_binding/lib/src/utils/pubspec_utils.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model",
+        "file path → SymbolLayer.util"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/utils/`package_config.dart`/DependencySource#",
+      "name": "DependencySource",
+      "layer": "util",
+      "confidence": 1.0,
+      "file": "packages/dart_binding/lib/src/utils/package_config.dart",
+      "signals": [
+        "file path → SymbolLayer.util"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/utils/`package_config.dart`/ResolvedPackage#",
+      "name": "ResolvedPackage",
+      "layer": "util",
+      "confidence": 1.0,
+      "file": "packages/dart_binding/lib/src/utils/package_config.dart",
+      "signals": [
+        "file path → SymbolLayer.util"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/utils/`package_config.dart`/ResolvedPackageList#",
+      "name": "ResolvedPackageList",
+      "layer": "util",
+      "confidence": 1.0,
+      "file": "packages/dart_binding/lib/src/utils/package_config.dart",
+      "signals": [
+        "file path → SymbolLayer.util"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/adapters/`hologram_adapter.dart`/HologramAnalyzerAdapter#",
+      "name": "HologramAnalyzerAdapter",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/adapters/hologram_adapter.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/adapters/`hologram_adapter.dart`/FSEventTypeToFileChange#",
+      "name": "FSEventTypeToFileChange",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/adapters/hologram_adapter.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/adapters/`analyzer_adapter.dart`/FileChangeType#",
+      "name": "FileChangeType",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/adapters/analyzer_adapter.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/adapters/`analyzer_adapter.dart`/FileChange#",
+      "name": "FileChange",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/adapters/analyzer_adapter.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/adapters/`analyzer_adapter.dart`/AnalyzerAdapter#",
+      "name": "AnalyzerAdapter",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/adapters/analyzer_adapter.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/adapters/`analyzer_adapter.dart`/DefaultAnalyzerAdapter#",
+      "name": "DefaultAnalyzerAdapter",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/adapters/analyzer_adapter.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry_provider.dart`/PackageRegistryProvider#",
+      "name": "PackageRegistryProvider",
+      "layer": "service",
+      "feature": "package_registry",
+      "confidence": 1.0,
+      "file": "packages/dart_binding/lib/src/package_registry_provider.dart",
+      "signals": [
+        "name pattern → SymbolLayer.service",
+        "feature: package_registry"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`package_registry_provider.dart`/PackageRegistryProviderExtension#",
+      "name": "PackageRegistryProviderExtension",
+      "layer": "util",
+      "confidence": 1.0,
+      "file": "packages/dart_binding/lib/src/package_registry_provider.dart",
+      "signals": [
+        "name pattern → SymbolLayer.util"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/IncrementalScipIndexer#",
+      "name": "IncrementalScipIndexer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/IndexUpdate#",
+      "name": "IndexUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/InitialIndexUpdate#",
+      "name": "InitialIndexUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/CachedIndexUpdate#",
+      "name": "CachedIndexUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/IncrementalIndexUpdate#",
+      "name": "IncrementalIndexUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/FileUpdatedUpdate#",
+      "name": "FileUpdatedUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/FileRemovedUpdate#",
+      "name": "FileRemovedUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/`incremental_indexer.dart`/IndexErrorUpdate#",
+      "name": "IndexErrorUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/incremental_indexer.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub dart_binding 0.1.0 lib/src/analyzer/`signature_visitor.dart`/SignatureVisitor#",
+      "name": "SignatureVisitor",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/dart_binding/lib/src/analyzer/signature_visitor.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/ChainNode#",
+      "name": "ChainNode",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/MethodNode#",
+      "name": "MethodNode",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/ClassNode#",
+      "name": "ClassNode",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/CallbackNode#",
+      "name": "CallbackNode",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/ControlFlowNode#",
+      "name": "ControlFlowNode",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/WidgetNode#",
+      "name": "WidgetNode",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation_chain.dart`/NavigationChainExtractor#",
+      "name": "NavigationChainExtractor",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation_chain.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`classifier.dart`/SymbolLayer#",
+      "name": "SymbolLayer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/classifier.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`classifier.dart`/SymbolClassification#",
+      "name": "SymbolClassification",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/classifier.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`classifier.dart`/LayerClassifier#",
+      "name": "LayerClassifier",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/classifier.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`classifier.dart`/FeatureDetector#",
+      "name": "FeatureDetector",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/classifier.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`classifier.dart`/SymbolClassifierService#",
+      "name": "SymbolClassifierService",
+      "layer": "service",
+      "feature": "symbol_classifier",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/classification/classifier.dart",
+      "signals": [
+        "name pattern → SymbolLayer.service",
+        "feature: symbol_classifier"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/ScipMethod#",
+      "name": "ScipMethod",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/InitializeParams#",
+      "name": "InitializeParams",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/InitializeResult#",
+      "name": "InitializeResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/QueryParams#",
+      "name": "QueryParams",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/QueryResponse#",
+      "name": "QueryResponse",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/StatusResult#",
+      "name": "StatusResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/FileChangeParams#",
+      "name": "FileChangeParams",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/JsonRpcRequest#",
+      "name": "JsonRpcRequest",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/JsonRpcResponse#",
+      "name": "JsonRpcResponse",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`protocol.dart`/JsonRpcError#",
+      "name": "JsonRpcError",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/protocol.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/protocol/`json_rpc_server.dart`/ScipServer#",
+      "name": "ScipServer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/protocol/json_rpc_server.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/LanguageBinding#",
+      "name": "LanguageBinding",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/DiscoveredPackage#",
+      "name": "DiscoveredPackage",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/PackageIndexer#",
+      "name": "PackageIndexer",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/IndexUpdate#",
+      "name": "IndexUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/InitialIndexUpdate#",
+      "name": "InitialIndexUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/FileUpdatedUpdate#",
+      "name": "FileUpdatedUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/FileRemovedUpdate#",
+      "name": "FileRemovedUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/`language_binding.dart`/IndexErrorUpdate#",
+      "name": "IndexErrorUpdate",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/language_binding.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`scip_index.dart`/ScipIndex#",
+      "name": "ScipIndex",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/index/scip_index.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`scip_index.dart`/SymbolInfo#",
+      "name": "SymbolInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/index/scip_index.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`scip_index.dart`/RelationshipInfo#",
+      "name": "RelationshipInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/index/scip_index.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`scip_index.dart`/OccurrenceInfo#",
+      "name": "OccurrenceInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/index/scip_index.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`scip_index.dart`/GrepMatchData#",
+      "name": "GrepMatchData",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/index/scip_index.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`index_provider.dart`/IndexProvider#",
+      "name": "IndexProvider",
+      "layer": "service",
+      "feature": "index",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/index/index_provider.dart",
+      "signals": [
+        "name pattern → SymbolLayer.service",
+        "feature: index"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`index_provider.dart`/ReferenceWithSource#",
+      "name": "ReferenceWithSource",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/index/index_provider.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/index/`index_provider.dart`/GrepMatchInfo#",
+      "name": "GrepMatchInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/index/index_provider.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_parser.dart`/ScipQuery#",
+      "name": "ScipQuery",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_parser.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_parser.dart`/QueryAction#",
+      "name": "QueryAction",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_parser.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_parser.dart`/PatternType#",
+      "name": "PatternType",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_parser.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_parser.dart`/ParsedPattern#",
+      "name": "ParsedPattern",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_parser.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_executor.dart`/QueryExecutor#",
+      "name": "QueryExecutor",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_executor.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/QueryResult#",
+      "name": "QueryResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/DefinitionResult#",
+      "name": "DefinitionResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/DefinitionMatch#",
+      "name": "DefinitionMatch",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/ReferencesResult#",
+      "name": "ReferencesResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/ReferenceMatch#",
+      "name": "ReferenceMatch",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/MembersResult#",
+      "name": "MembersResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/SearchResult#",
+      "name": "SearchResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/SignatureResult#",
+      "name": "SignatureResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/SourceResult#",
+      "name": "SourceResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/HierarchyResult#",
+      "name": "HierarchyResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/FilesResult#",
+      "name": "FilesResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/FileSymbolsResult#",
+      "name": "FileSymbolsResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/StatsResult#",
+      "name": "StatsResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/NotFoundResult#",
+      "name": "NotFoundResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/ErrorResult#",
+      "name": "ErrorResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/WhichResult#",
+      "name": "WhichResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/WhichMatch#",
+      "name": "WhichMatch",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/AggregatedReferencesResult#",
+      "name": "AggregatedReferencesResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/SymbolReferences#",
+      "name": "SymbolReferences",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/CallGraphResult#",
+      "name": "CallGraphResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/ImportsResult#",
+      "name": "ImportsResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/DependenciesResult#",
+      "name": "DependenciesResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/PipelineResult#",
+      "name": "PipelineResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/GrepResult#",
+      "name": "GrepResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/GrepMatch#",
+      "name": "GrepMatch",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/GrepFilesResult#",
+      "name": "GrepFilesResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/GrepCountResult#",
+      "name": "GrepCountResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/ClassifyResult#",
+      "name": "ClassifyResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/SymbolClassificationInfo#",
+      "name": "SymbolClassificationInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/StoryboardResult#",
+      "name": "StoryboardResult",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/ScreenInfo#",
+      "name": "ScreenInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/query/`query_result.dart`/NavigationEdgeInfo#",
+      "name": "NavigationEdgeInfo",
+      "layer": "model",
+      "confidence": 1.0,
+      "file": "packages/scip_server/lib/src/query/query_result.dart",
+      "signals": [
+        "name pattern → SymbolLayer.model"
+      ]
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 lib/src/`code_context.dart`/CodeContext#",
+      "name": "CodeContext",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "lib/src/code_context.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 lib/src/`root_watcher.dart`/RootWatcher#",
+      "name": "RootWatcher",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "lib/src/root_watcher.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub code_context 0.2.0 lib/src/mcp/`dart_context_mcp.dart`/DartContextSupport#",
+      "name": "DartContextSupport",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "lib/src/mcp/dart_context_mcp.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation.dart`/NavigationEdge#",
+      "name": "NavigationEdge",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation.dart`/RouterType#",
+      "name": "RouterType",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation.dart`/NavigationGraph#",
+      "name": "NavigationGraph",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    },
+    {
+      "symbol": "scip-dart pub scip_server 0.1.0 lib/src/classification/`navigation.dart`/NavigationDetector#",
+      "name": "NavigationDetector",
+      "layer": "unknown",
+      "confidence": 0.0,
+      "file": "packages/scip_server/lib/src/classification/navigation.dart",
+      "signals": []
+    }
+  ]
+}

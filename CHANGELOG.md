@@ -94,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Integrations
 - CLI tool with interactive mode (`-i`) and watch mode (`-w`)
-- MCP server support via `DartContextSupport` mixin
+- MCP server support via `CodeContextSupport` mixin
 - External analyzer adapter for embedding in existing analysis infrastructure
 
 #### CLI Subcommands
@@ -123,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Cache Infrastructure
 - `CachePaths` - Centralized cache path management
-- Global cache at `~/.dart_context/` mirrors pub-cache structure
+- Global cache at `~/.code_context/` mirrors pub-cache structure
 - Support for hosted, git, and path dependencies
 - `package_config.json` parsing for accurate dependency resolution
 

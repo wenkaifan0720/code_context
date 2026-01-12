@@ -12,6 +12,9 @@ dependencies:
   scip_dart: ^1.6.2
   protobuf: ^3.1.0
   
+  # Dart analyzer for AST access
+  analyzer: ^5.13.0
+  
   # Utilities
   collection: ^1.18.0
   glob: ^2.1.0
