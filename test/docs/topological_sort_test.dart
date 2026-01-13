@@ -239,8 +239,10 @@ void main() {
         // lib/core should come first
         expect(order.first, equals('lib/core'));
         // lib/auth and lib/products come after lib/core
-        expect(order.indexOf('lib/auth'), greaterThan(order.indexOf('lib/core')));
-        expect(order.indexOf('lib/products'), greaterThan(order.indexOf('lib/core')));
+        expect(
+            order.indexOf('lib/auth'), greaterThan(order.indexOf('lib/core')));
+        expect(order.indexOf('lib/products'),
+            greaterThan(order.indexOf('lib/core')));
       });
 
       test('groups cycles together', () {
