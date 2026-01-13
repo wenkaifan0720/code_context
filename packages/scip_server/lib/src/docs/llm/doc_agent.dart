@@ -194,17 +194,21 @@ IMPORTANT GUIDELINES:
 - Document public API clearly but briefly
 - For simple data models/utilities: just list properties/methods, no usage examples
 - For complex services/pages: brief overview + key methods, minimal code examples
+- For root/parent folders with subfolders: link to subfolder READMEs for details
+  (e.g., "See [Auth Services](features/auth/services/README.md) for authentication logic")
 
 CONCISENESS RULES:
 - Simple folders (models, utils): 10-30 lines total
 - Medium folders (repositories, widgets): 30-60 lines total
 - Complex folders (services, pages): 60-100 lines total
+- Root folders with subfolders: 40-80 lines (overview + subfolder links)
 - Avoid repetitive "This class does X. It does X by..." - state it once
 - No need for full code examples unless the usage is non-obvious
 
 You have access to tools to explore the codebase. Use them to gather information
 before generating documentation. The `get_public_api` tool is especially useful
-for understanding interfaces without reading entire files.
+for understanding interfaces without reading entire files. Use `list_folder` to
+discover subfolders and link to their documentation.
 
 When you have generated enough information, output the documentation as markdown.
 Start with a title (# Folder Name), then include sections for Overview, Key Components,
