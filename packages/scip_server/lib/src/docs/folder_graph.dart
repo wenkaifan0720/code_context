@@ -21,6 +21,36 @@ class FolderDependencyGraph {
         _externalDeps = externalDeps,
         _dependents = dependents;
 
+  /// Create a graph for testing purposes.
+  ///
+  /// This allows testing graph query methods without needing a full ScipIndex.
+  factory FolderDependencyGraph.forTesting({
+    required Set<String> folders,
+    required Map<String, Set<String>> internalDeps,
+    Map<String, Set<String>>? externalDeps,
+    Map<String, Set<String>>? dependents,
+  }) {
+    // Auto-compute dependents if not provided
+    final computedDependents = dependents ?? <String, Set<String>>{};
+    if (dependents == null) {
+      for (final folder in folders) {
+        computedDependents[folder] = {};
+      }
+      for (final entry in internalDeps.entries) {
+        for (final dep in entry.value) {
+          computedDependents.putIfAbsent(dep, () => {}).add(entry.key);
+        }
+      }
+    }
+
+    return FolderDependencyGraph._(
+      folders: folders,
+      internalDeps: internalDeps,
+      externalDeps: externalDeps ?? {},
+      dependents: computedDependents,
+    );
+  }
+
   /// All folders in the graph.
   final Set<String> folders;
 
