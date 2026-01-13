@@ -71,13 +71,20 @@ class LinkTransformer {
   ///
   /// Replaces all `scip://` URIs with navigable links based on the
   /// specified [style].
-  String transform(String sourceDoc, {LinkStyle style = LinkStyle.relative}) {
+  ///
+  /// [docPath] is the path to the rendered doc file (relative to project root),
+  /// used to compute relative paths. If not provided, paths are relative to docsRoot.
+  String transform(
+    String sourceDoc, {
+    LinkStyle style = LinkStyle.relative,
+    String? docPath,
+  }) {
     // First, transform reference-style links
     var result = sourceDoc.replaceAllMapped(_refPattern, (match) {
       final label = match.group(1)!;
       final scipUri = match.group(2)!;
 
-      final resolved = resolveUri(scipUri, style: style);
+      final resolved = resolveUri(scipUri, style: style, docPath: docPath);
       if (resolved != null) {
         return '[$label]: $resolved';
       } else {
@@ -90,7 +97,7 @@ class LinkTransformer {
       final label = match.group(1)!;
       final scipUri = match.group(2)!;
 
-      final resolved = resolveUri(scipUri, style: style);
+      final resolved = resolveUri(scipUri, style: style, docPath: docPath);
       if (resolved != null) {
         return '[$label]($resolved)';
       } else {
@@ -104,7 +111,14 @@ class LinkTransformer {
   /// Resolve a single scip:// URI to a navigable link.
   ///
   /// Returns null if the symbol cannot be found.
-  String? resolveUri(String scipUri, {LinkStyle style = LinkStyle.relative}) {
+  ///
+  /// [docPath] is the path to the rendered doc file (relative to project root),
+  /// used to compute relative paths.
+  String? resolveUri(
+    String scipUri, {
+    LinkStyle style = LinkStyle.relative,
+    String? docPath,
+  }) {
     final parsed = ScipUri.parse(scipUri);
     if (parsed == null) return null;
 
@@ -116,6 +130,7 @@ class LinkTransformer {
         file: definition.file,
         line: definition.line + 1, // Convert to 1-based
         style: style,
+        docPath: docPath,
       );
     }
 
@@ -128,6 +143,7 @@ class LinkTransformer {
           file: def.file,
           line: def.line + 1,
           style: style,
+          docPath: docPath,
         );
       }
     }
@@ -146,6 +162,7 @@ class LinkTransformer {
             file: def.file,
             line: def.line + 1,
             style: style,
+            docPath: docPath,
           );
         }
         // Fall back to file location if no definition found
@@ -153,6 +170,7 @@ class LinkTransformer {
           file: sym.file!,
           line: 1,
           style: style,
+          docPath: docPath,
         );
       }
     }
@@ -166,6 +184,7 @@ class LinkTransformer {
           file: def.file,
           line: def.line + 1,
           style: style,
+          docPath: docPath,
         );
       }
       if (firstMatch.file != null) {
@@ -173,6 +192,7 @@ class LinkTransformer {
           file: firstMatch.file!,
           line: 1,
           style: style,
+          docPath: docPath,
         );
       }
     }
@@ -181,18 +201,29 @@ class LinkTransformer {
   }
 
   /// Format a link based on the style.
+  ///
+  /// [docPath] is the path to the rendered doc file (relative to project root).
   String? _formatLink({
     required String file,
     required int line,
     required LinkStyle style,
+    String? docPath,
   }) {
     switch (style) {
       case LinkStyle.relative:
-        // Compute relative path from docsRoot to source file
-        final relativePath = p.relative(
-          p.join(projectRoot ?? index.projectRoot, file),
-          from: docsRoot,
-        );
+        // Compute relative path from the doc file to the source file
+        final sourceAbsPath = p.join(projectRoot ?? index.projectRoot, file);
+        
+        // If docPath is provided, compute path relative to that doc
+        if (docPath != null) {
+          final docAbsPath = p.join(projectRoot ?? index.projectRoot, docPath);
+          final docDir = p.dirname(docAbsPath);
+          final relativePath = p.relative(sourceAbsPath, from: docDir);
+          return '$relativePath#L$line';
+        }
+        
+        // Otherwise, compute from docsRoot (backward compat)
+        final relativePath = p.relative(sourceAbsPath, from: docsRoot);
         return '$relativePath#L$line';
 
       case LinkStyle.github:
@@ -202,6 +233,7 @@ class LinkTransformer {
             file: file,
             line: line,
             style: LinkStyle.relative,
+            docPath: docPath,
           );
         }
         return '$githubBaseUrl/$file#L$line';

@@ -17,12 +17,16 @@ class DocGenerationAgent implements DocGenerator {
     required LlmService llmService,
     required DocToolRegistry toolRegistry,
     this.maxIterations = 10,
+    this.verbose = false,
+    this.onLog,
   })  : _llmService = llmService,
         _toolRegistry = toolRegistry;
 
   final LlmService _llmService;
   final DocToolRegistry _toolRegistry;
   final int maxIterations;
+  final bool verbose;
+  final void Function(String)? onLog;
 
   // Track token usage
   int _inputTokens = 0;
@@ -126,7 +130,9 @@ class DocGenerationAgent implements DocGenerator {
 
       final toolResults = <LlmToolResult>[];
       for (final call in response.toolCalls) {
+        _log('[Tool Call] ${call.name}(${call.arguments})');
         final result = await _toolRegistry.executeTool(call.name, call.arguments);
+        _log('[Tool Result] ${result.length} chars');
         toolResults.add(LlmToolResult(
           toolCallId: call.id,
           content: result,
@@ -174,27 +180,35 @@ class DocGenerationAgent implements DocGenerator {
   String _buildFolderSystemPrompt() => '''
 You are a technical documentation expert generating docs for a code folder.
 
-Your goal is to create clear, comprehensive documentation that helps developers understand:
+Your goal is to create clear, concise documentation that helps developers understand:
 1. What this folder contains and its purpose
 2. Key classes, functions, and their relationships
 3. How this code fits into the larger project
-4. Usage examples where appropriate
 
 IMPORTANT GUIDELINES:
 - Use smart symbols with scip:// URIs to link to code definitions
 - Format: [ClassName](scip://path/to/file.dart/ClassName#)
-- Be concise but thorough
+- **Be concise** - avoid lengthy explanations and excessive code examples
 - Focus on the "why" not just the "what"
-- Include any important architectural decisions
-- Document public API thoroughly, internal details briefly
+- Include architectural decisions only if they're significant
+- Document public API clearly but briefly
+- For simple data models/utilities: just list properties/methods, no usage examples
+- For complex services/pages: brief overview + key methods, minimal code examples
+
+CONCISENESS RULES:
+- Simple folders (models, utils): 10-30 lines total
+- Medium folders (repositories, widgets): 30-60 lines total
+- Complex folders (services, pages): 60-100 lines total
+- Avoid repetitive "This class does X. It does X by..." - state it once
+- No need for full code examples unless the usage is non-obvious
 
 You have access to tools to explore the codebase. Use them to gather information
 before generating documentation. The `get_public_api` tool is especially useful
 for understanding interfaces without reading entire files.
 
-When you have gathered enough information, generate the documentation as markdown.
+When you have generated enough information, output the documentation as markdown.
 Start with a title (# Folder Name), then include sections for Overview, Key Components,
-Usage, and Dependencies as appropriate.
+and Dependencies as appropriate. Skip Usage examples for simple folders.
 ''';
 
   String _buildModuleSystemPrompt() => '''
@@ -292,15 +306,61 @@ When ready, output the final documentation in markdown format.
     return buffer.toString();
   }
 
+  // ===== Helpers =====
+
+  void _log(String message) {
+    if (verbose) {
+      onLog?.call(message);
+      print(message);
+    }
+  }
+
+  /// Strip LLM thinking/meta-commentary from generated content.
+  ///
+  /// Removes lines that look like:
+  /// - "Now I have enough information..."
+  /// - "Let me generate..."
+  /// - Other conversational filler
+  String _stripThinking(String content) {
+    final lines = content.split('\n');
+    final filtered = <String>[];
+    
+    for (final line in lines) {
+      final trimmed = line.trim().toLowerCase();
+      
+      // Skip thinking lines
+      if (trimmed.startsWith('now i ') ||
+          trimmed.startsWith('let me ') ||
+          trimmed.startsWith('i will ') ||
+          trimmed.startsWith('i can ') ||
+          trimmed.startsWith('i have ') ||
+          trimmed.startsWith('i need ') ||
+          trimmed.contains('enough information') ||
+          trimmed.contains('generate comprehensive')) {
+        continue;
+      }
+      
+      filtered.add(line);
+    }
+    
+    // Remove leading empty lines
+    while (filtered.isNotEmpty && filtered.first.trim().isEmpty) {
+      filtered.removeAt(0);
+    }
+    
+    return filtered.join('\n');
+  }
+
   // ===== Doc Extraction =====
 
   GeneratedDoc _extractFolderDoc(String content, DocContext context) {
-    final smartSymbols = _extractSmartSymbols(content);
-    final title = _extractTitle(content);
-    final summary = _extractSummary(content);
+    final cleaned = _stripThinking(content);
+    final smartSymbols = _extractSmartSymbols(cleaned);
+    final title = _extractTitle(cleaned);
+    final summary = _extractSummary(cleaned);
 
     return GeneratedDoc(
-      content: content,
+      content: cleaned,
       smartSymbols: smartSymbols,
       title: title,
       summary: summary,
@@ -312,17 +372,18 @@ When ready, output the final documentation in markdown format.
     String moduleName,
     List<FolderDocSummary> folders,
   ) {
-    final smartSymbols = _extractSmartSymbols(content);
+    final cleaned = _stripThinking(content);
+    final smartSymbols = _extractSmartSymbols(cleaned);
     // Also include symbols from folder docs
     for (final folder in folders) {
       smartSymbols.addAll(folder.smartSymbols);
     }
 
     return GeneratedDoc(
-      content: content,
+      content: cleaned,
       smartSymbols: smartSymbols.toSet().toList(),
       title: '$moduleName Module',
-      summary: _extractSummary(content),
+      summary: _extractSummary(cleaned),
     );
   }
 
@@ -331,17 +392,18 @@ When ready, output the final documentation in markdown format.
     String projectName,
     List<ModuleDocSummary> modules,
   ) {
-    final smartSymbols = _extractSmartSymbols(content);
+    final cleaned = _stripThinking(content);
+    final smartSymbols = _extractSmartSymbols(cleaned);
     // Also include symbols from module docs
     for (final module in modules) {
       smartSymbols.addAll(module.smartSymbols);
     }
 
     return GeneratedDoc(
-      content: content,
+      content: cleaned,
       smartSymbols: smartSymbols.toSet().toList(),
       title: projectName,
-      summary: _extractSummary(content),
+      summary: _extractSummary(cleaned),
     );
   }
 

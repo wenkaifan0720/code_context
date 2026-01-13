@@ -1537,6 +1537,12 @@ Future<void> _docsGenerate(List<String> args) async {
       'api-key',
       help: 'Anthropic API key (or set ANTHROPIC_API_KEY env var)',
     )
+    ..addFlag(
+      'verbose',
+      abbr: 'v',
+      help: 'Show verbose logging (LLM tool calls)',
+      defaultsTo: false,
+    )
     ..addFlag('help', abbr: 'h', help: 'Show help', negatable: false);
 
   final parsed = parser.parse(args);
@@ -1562,6 +1568,7 @@ Future<void> _docsGenerate(List<String> args) async {
   final force = parsed['force'] as bool;
   final dryRun = parsed['dry-run'] as bool;
   final useLlm = parsed['llm'] as bool;
+  final verbose = parsed['verbose'] as bool;
   final apiKeyArg = parsed['api-key'] as String?;
 
   // Resolve API key
@@ -1646,6 +1653,7 @@ Future<void> _docsGenerate(List<String> args) async {
             index: index,
             projectRoot: projectPath,
             docsRoot: docsRoot,
+            verbose: verbose,
           )
         : const StubDocGenerator();
 
@@ -1680,8 +1688,13 @@ Future<void> _docsGenerate(List<String> args) async {
         final transformer = LinkTransformer(
           index: index,
           docsRoot: docsRoot,
+          projectRoot: projectPath,
         );
-        final renderedContent = transformer.transform(generatedDoc.content);
+        final renderedFilePath = '.dart_context/docs/rendered/folders/$folder/README.md';
+        final renderedContent = transformer.transform(
+          generatedDoc.content,
+          docPath: renderedFilePath,
+        );
         final renderedFile = File('$docsRoot/rendered/folders/$folder/README.md');
         await renderedFile.parent.create(recursive: true);
         await renderedFile.writeAsString(renderedContent);
@@ -1739,6 +1752,7 @@ DocGenerationAgent _createAgenticGenerator({
   required dynamic index, // ScipIndex
   required String projectRoot,
   required String docsRoot,
+  bool verbose = false,
 }) {
   final llmService = AnthropicService(apiKey: apiKey);
   final toolRegistry = DocToolRegistry(
@@ -1751,6 +1765,8 @@ DocGenerationAgent _createAgenticGenerator({
     llmService: llmService,
     toolRegistry: toolRegistry,
     maxIterations: 10, // Allow up to 10 tool calls per folder
+    verbose: verbose,
+    onLog: (msg) => stderr.writeln('[Agent] $msg'),
   );
 }
 
@@ -1824,6 +1840,7 @@ Future<void> _docsResolve(List<String> args) async {
     final transformer = LinkTransformer(
       index: index,
       docsRoot: docsRoot,
+      projectRoot: projectPath,
     );
 
     // Find all source docs and transform them
@@ -1836,7 +1853,14 @@ Future<void> _docsResolve(List<String> args) async {
       stderr.write('Resolving: $relativePath... ');
 
       final sourceContent = await entity.readAsString();
-      final renderedContent = transformer.transform(sourceContent, style: linkStyle);
+      
+      // Compute the doc path relative to project root
+      final renderedFilePath = '.dart_context/docs/rendered/folders$relativePath';
+      final renderedContent = transformer.transform(
+        sourceContent,
+        style: linkStyle,
+        docPath: renderedFilePath,
+      );
 
       final renderedFile = File('${renderedDir.path}$relativePath');
       await renderedFile.parent.create(recursive: true);
