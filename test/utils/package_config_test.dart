@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_context/src/utils/package_config.dart';
+import 'package:code_context/code_context.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -111,9 +111,12 @@ void main() {
 
       final packages = await parsePackageConfig(tempDir.path);
 
-      expect(packages.hosted.length, 1);
-      expect(packages.git.length, 1);
-      expect(packages.path.length, 1);
+      final hosted = packages.where((p) => p.source == DependencySource.hosted);
+      final git = packages.where((p) => p.source == DependencySource.git);
+      final path = packages.where((p) => p.source == DependencySource.path);
+      expect(hosted.length, 1);
+      expect(git.length, 1);
+      expect(path.length, 1);
     });
 
     test('handles Flutter SDK packages', () async {
@@ -180,14 +183,18 @@ void main() {
 
       final packages = await parsePackageConfig(tempDir.path);
 
-      expect(packages.hosted.length, 2);
-      expect(packages.hosted.map((p) => p.name), containsAll(['h1', 'h2']));
+      final hosted = packages.where((p) => p.source == DependencySource.hosted).toList();
+      final git = packages.where((p) => p.source == DependencySource.git).toList();
+      final path = packages.where((p) => p.source == DependencySource.path).toList();
 
-      expect(packages.git.length, 1);
-      expect(packages.git.first.name, 'g1');
+      expect(hosted.length, 2);
+      expect(hosted.map((p) => p.name), containsAll(['h1', 'h2']));
 
-      expect(packages.path.length, 1);
-      expect(packages.path.first.name, 'p1');
+      expect(git.length, 1);
+      expect(git.first.name, 'g1');
+
+      expect(path.length, 1);
+      expect(path.first.name, 'p1');
     });
   });
 }

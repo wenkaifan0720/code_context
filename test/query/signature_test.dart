@@ -1,13 +1,12 @@
 import 'dart:io';
 
-import 'package:dart_context/dart_context.dart';
-import 'package:dart_context/src/query/query_result.dart';
+import 'package:code_context/code_context.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('Signature query', () {
     late Directory tempDir;
-    late DartContext context;
+    late CodeContext context;
 
     setUp(() async {
       // Create temp directory with test files
@@ -67,7 +66,7 @@ void initialize() {
 ''');
 
       // Open the project
-      context = await DartContext.open(tempDir.path, watch: false);
+      context = await CodeContext.open(tempDir.path, watch: false);
     });
 
     tearDown(() async {

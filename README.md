@@ -1,37 +1,39 @@
-# dart_context
+# code_context
 
-Lightweight semantic code intelligence for Dart. Query your codebase with a simple DSL.
+Language-agnostic semantic code intelligence. Query your codebase with a simple DSL.
 
 ## Features
 
+- **Multi-language support**: Extensible architecture with Dart as the first supported language
 - **Index caching**: Persistent cache for instant startup (~300ms vs ~10s)
 - **Incremental indexing**: Watches files and updates the index automatically
 - **Simple query DSL**: Human and LLM-friendly query language
 - **Fast lookups**: O(1) symbol lookups via in-memory indexes
 - **SCIP-compatible**: Uses [scip-dart](https://github.com/Workiva/scip-dart) for standard code intelligence format
 
-## Installation
+## Quick Start
+
+### Installation
 
 ```bash
-dart pub add dart_context
+# As a library
+dart pub add code_context
+
+# As a CLI tool
+dart pub global activate code_context
 ```
 
-Or for CLI usage:
-
-```bash
-dart pub global activate dart_context
-```
-
-## Usage
-
-### As a Library
+### Library Usage
 
 ```dart
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main() async {
-  // Open a project
-  final context = await DartContext.open('/path/to/project');
+  // Generic: auto-detect language
+  final context = await CodeContext.open('/path/to/project');
+
+  // Or use Dart-specific context with full features
+  final dartContext = await DartContext.open('/path/to/dart/project');
 
   // Query with DSL
   final result = await context.query('def AuthRepository');
@@ -41,337 +43,59 @@ void main() async {
   final refs = await context.query('refs login');
   print(refs.toText());
 
-  // Get class members
-  final members = await context.query('members MyClass');
-  print(members.toJson());
-
-  // Watch for updates
-  context.updates.listen((update) {
-    print('Index updated: $update');
-  });
-
-  // Cleanup
   await context.dispose();
 }
 ```
 
-### CLI
+### CLI Usage
 
 ```bash
 # Find definition
-dart_context def AuthRepository
+code_context def AuthRepository
 
-# Find references
-dart_context refs login
-
-# Get class members
-dart_context members MyClass
+# Find references  
+code_context refs login
 
 # Search with filters
-dart_context "find Auth* kind:class"
-dart_context "find * kind:method in:lib/auth/"
+code_context "find Auth* kind:class"
 
 # Interactive mode
-dart_context -i
+code_context -i
 
-# Watch mode (shows file changes)
-dart_context -w
-
-# Watch mode with auto-rerun query
-dart_context -w "find * kind:class"
-
-# JSON output
-dart_context -f json refs login
-
-# Force full re-index (skip cache)
-dart_context --no-cache stats
+# Dart-specific commands (namespaced with dart:)
+code_context dart:index-sdk /path/to/sdk
+code_context dart:index-flutter
+code_context dart:index-deps
+code_context dart:list-indexes
 ```
 
 ## Query DSL
 
-| Query | Description |
-|-------|-------------|
-| `def <symbol>` | Find definition of a symbol |
-| `refs <symbol>` | Find all references to a symbol |
-| `members <symbol>` | Get members of a class/mixin/extension |
-| `impls <symbol>` | Find implementations of a class/interface |
-| `supertypes <symbol>` | Get supertypes of a class |
-| `subtypes <symbol>` | Get subtypes (implementations) |
-| `hierarchy <symbol>` | Full hierarchy (supertypes + subtypes) |
-| `source <symbol>` | Get source code for a symbol |
-| `find <pattern>` | Search for symbols matching pattern |
-| `which <symbol>` | Show all matches (for disambiguation) |
-| `grep <pattern>` | Search in source code (like grep) |
-| `calls <symbol>` | What does this symbol call? |
-| `callers <symbol>` | What calls this symbol? |
-| `imports <file>` | What does this file import? |
-| `exports <path>` | What does this file/directory export? |
-| `deps <symbol>` | Dependencies of a symbol |
-| `sig <symbol>` | Get signature (without body) |
-| `symbols <file>` | List all symbols in a file |
-| `get <scip-id>` | Direct lookup by exact SCIP symbol ID |
-| `files` | List all indexed files |
-| `stats` | Get index statistics |
+| Query | Description | Example |
+|-------|-------------|---------|
+| `def <symbol>` | Find definition | `def AuthRepository` |
+| `refs <symbol>` | Find references | `refs login` |
+| `find <pattern>` | Search symbols | `find Auth*` |
+| `grep <pattern>` | Search source | `grep /TODO\|FIXME/` |
+| `members <symbol>` | Class members | `members MyClass` |
+| `hierarchy <symbol>` | Type hierarchy | `hierarchy MyWidget` |
+| `calls <symbol>` | What it calls | `calls login` |
+| `callers <symbol>` | What calls it | `callers validateUser` |
 
-### Qualified Names (Disambiguation)
+[Full DSL Reference →](doc/query-dsl.md)
 
-When multiple symbols have the same name, use qualified names:
+## Documentation
 
-```bash
-# Multiple "login" methods exist - use qualified name
-refs AuthService.login      # References to login in AuthService only
-def UserRepository.login    # Definition of login in UserRepository
-
-# Discover all matches first
-which login
-# Output:
-# 1. login [method] in AuthService (lib/auth/service.dart)
-# 2. login [method] in UserRepository (lib/data/repo.dart)
-# 3. LoginPage [class] (lib/ui/login_page.dart)
-```
-
-### Pattern Syntax
-
-| Pattern | Type | Description |
-|---------|------|-------------|
-| `Auth*` | Glob | Wildcard matching (* = any chars, ? = one char) |
-| `/TODO\|FIXME/` | Regex | Regular expression (between slashes) |
-| `/error/i` | Regex | Case-insensitive regex (with `i` flag) |
-| `~authentcate` | Fuzzy | Typo-tolerant matching (finds "authenticate") |
-| `login` | Literal | Exact match |
-
-### Filters (for `find`)
-
-| Filter | Description |
-|--------|-------------|
-| `kind:<kind>` | Filter by symbol kind (class, method, function, field, etc.) |
-| `in:<path>` | Filter by file path prefix |
-
-### Grep Flags
-
-| Flag | Description | Example |
-|------|-------------|---------|
-| `-i` | Case insensitive | `grep error -i` |
-| `-v` | Invert match (non-matching lines) | `grep TODO -v` |
-| `-w` | Word boundary (whole words only) | `grep test -w` |
-| `-l` | List files with matches only | `grep TODO -l` |
-| `-L` | List files without matches | `grep TODO -L` |
-| `-c` | Count matches per file | `grep error -c` |
-| `-o` | Show only matched text | `grep /\w+Error/ -o` |
-| `-F` | Fixed strings (literal, no regex) | `grep -F '$variable'` |
-| `-M` | Multiline matching | `grep /class.*\{/ -M` |
-| `-D` | Search external dependencies | `grep StatelessWidget -D` |
-| `-C:n` | Context lines (before + after) | `grep TODO -C:3` |
-| `-A:n` | Lines after match | `grep error -A:5` |
-| `-B:n` | Lines before match | `grep error -B:2` |
-| `-m:n` | Max matches per file | `grep TODO -m:10` |
-| `--include:glob` | Only search matching files | `grep error --include:*.dart` |
-| `--exclude:glob` | Skip matching files | `grep TODO --exclude:test/*` |
-
-### Examples
-
-```bash
-# Find all classes starting with "Auth"
-find Auth* kind:class
-
-# Find all methods in lib/auth/
-find * kind:method in:lib/auth/
-
-# Find definition with wildcard
-def AuthRepo*
-
-# Get hierarchy of a widget
-hierarchy MyWidget
-
-# Disambiguation workflow
-which handleSubmit         # See all matches
-refs FormWidget.handleSubmit  # Get refs for specific one
-
-# Grep for patterns in source code
-grep /TODO|FIXME/          # Find TODOs and FIXMEs
-grep /throw.*Exception/    # Find exception throws
-grep error in:lib/         # Find "error" in lib/
-grep TODO -c               # Count TODOs per file
-grep TODO -l               # List files with TODOs
-grep TODO -L               # List files WITHOUT TODOs
-grep test -w               # Match whole word "test" only
-grep /\w+Service/ -o       # Extract service class names
-grep -F '$_controller'     # Search literal $ without escaping
-grep TODO --exclude:test/* # Skip test files
-
-# Fuzzy matching (typo-tolerant)
-find ~authentcate          # Finds "authenticate" despite typo
-find ~respnse              # Finds "response"
-
-# Case-insensitive search
-grep /error/i              # Matches "Error", "ERROR", "error"
-
-# Call graph queries
-calls AuthService.login    # What does login() call?
-callers validateUser       # What calls validateUser()?
-deps AuthService           # All dependencies of AuthService
-
-# Import/export analysis
-imports lib/auth/service.dart  # What does this file import?
-exports lib/auth/              # What does this directory export?
-
-# File-scoped queries
-symbols lib/auth/service.dart  # List all symbols in this file
-
-# Direct symbol lookup (by SCIP ID)
-get "scip-dart pub my_app 1.0.0 lib/auth.dart/AuthService#"
-
-# Pipe queries (chain multiple queries)
-find Auth* | refs          # Find references for all Auth* symbols
-members MyClass | source   # Get source for all members
-find *Service | calls      # What do all services call?
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           DartContext                                   │
-│  Entry point: open(), query(), dispose()                                │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐│
-│  │ LLM / Agent  │────▶│ Query String │────▶│    QueryExecutor         ││
-│  │              │     │ "refs login" │     │                          ││
-│  └──────────────┘     └──────────────┘     │  parse() → execute()     ││
-│                                            └────────────┬─────────────┘│
-│                                                         │              │
-│                                                         ▼              │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                     PackageRegistry                              │  │
-│  │  Local packages (mutable) + External packages (cached)          │  │
-│  │  Cross-package symbol search, dependency resolution             │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│                                  │                                     │
-│              ┌───────────────────┼───────────────────┐                 │
-│              ▼                   ▼                   ▼                 │
-│  ┌───────────────────┐  ┌───────────────┐  ┌────────────────────────┐ │
-│  │ LocalPackageIndex │  │ ScipIndex     │  │ ExternalPackageIndex   │ │
-│  │ + Indexer (live)  │  │ O(1) lookups  │  │ SDK/Flutter/pub (cached)│ │
-│  └───────────────────┘  └───────────────┘  └────────────────────────┘ │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## How It Works
-
-1. **Cache Check**: On `open()`, looks for valid cache in `.dart_context/` directory
-2. **Initial/Incremental Index**: Full scan if no cache, or only changed files if cache exists
-3. **File Watching**: Uses filesystem events to detect changes
-4. **Incremental Updates**: Only re-analyzes changed files (via SHA-256 hash comparison)
-5. **Cache Persistence**: Saves index to disk after updates for fast subsequent startups
-6. **Query Execution**: Parses DSL and executes against in-memory indexes
-
-### Caching
-
-The index is cached in `.dart_context/` within your project:
-- `index.scip` - Serialized SCIP protobuf index
-- `manifest.json` - File hashes for cache validation
-
-Use `--no-cache` to force a full re-index:
-```bash
-dart_context --no-cache -p /path/to/project stats
-```
-
-### Cross-Package Queries
-
-dart_context supports querying across external dependencies (SDK, Flutter, pub packages) by pre-computing their indexes:
-
-```bash
-# Pre-index Flutter SDK packages (do this once per Flutter version)
-dart_context index-flutter /path/to/flutter
-
-# Pre-index the Dart SDK (do this once per SDK version)
-dart_context index-sdk /path/to/dart-sdk
-
-# Pre-index all dependencies from pubspec.lock
-dart_context index-deps
-
-# List available pre-computed indexes
-dart_context list-indexes
-
-# Query with dependencies loaded
-dart_context --with-deps "hierarchy MyWidget"
-
-# Search dependencies with grep -D flag
-dart_context --with-deps "grep Navigator -D -l"
-```
-
-Indexes are stored in `~/.dart_context/` with a structure that mirrors pub cache:
-```
-~/.dart_context/                      # Global cache
-├── sdk/
-│   └── 3.2.0/index.scip             # Dart SDK indexes
-├── flutter/
-│   └── 3.32.0/flutter/index.scip    # Flutter SDK packages
-├── hosted/
-│   ├── collection-1.18.0/index.scip # Pub packages
-│   └── analyzer-6.3.0/index.scip
-└── git/
-    └── fluxon-bfef6c5e/index.scip   # Git dependencies
-```
-
-This enables queries like:
-- `hierarchy SignatureVisitor` - See that it extends `RecursiveAstVisitor` from analyzer
-- `supertypes MyWidget` - Full Flutter widget hierarchy
-- `refs StatefulWidget` - Find all uses of Flutter's StatefulWidget
-
-**Note**: Pre-indexing is optional and takes time. By default, dart_context only indexes your project code.
-
-### Mono Repo Support
-
-dart_context automatically discovers and indexes all packages in any directory structure:
-
-- **Melos monorepos** (projects with `melos.yaml`)
-- **Dart 3.0+ pub workspaces** (pubspec.yaml with `workspace:` field)
-- **Any folder** with multiple `pubspec.yaml` files
-
-```bash
-# List all discovered packages in a directory
-dart_context list-packages /path/to/monorepo
-```
-
-For mono repos, indexes are stored per-package:
-
-```
-/path/to/monorepo/
-└── packages/
-    ├── my_core/
-    │   └── .dart_context/           # Per-package index
-    │       ├── index.scip
-    │       └── manifest.json
-    └── my_app/
-        └── .dart_context/
-            ├── index.scip
-            └── manifest.json
-```
-
-When opening a directory with multiple packages:
-- All packages are discovered recursively
-- Cross-package queries work automatically
-- A single file watcher at the root handles all packages
-- Each package maintains its own incremental cache
-
-```dart
-// Opening a mono repo
-final context = await DartContext.open('/path/to/monorepo');
-
-// All packages are discovered
-print(context.packages.length);     // e.g., 5 packages
-print(context.packageCount);        // Same as above
-
-// Cross-package queries work seamlessly
-final result = await context.query('refs SharedUtils'); // Finds refs in other packages
-
-// Find which package owns a file
-final pkg = context.findPackageForPath('/path/to/monorepo/packages/my_app/lib/main.dart');
-print(pkg?.name); // my_app
-```
+| Document | Description |
+|----------|-------------|
+| [Getting Started](doc/getting-started.md) | Installation and basic usage |
+| [Query DSL](doc/query-dsl.md) | Complete command reference |
+| [Architecture](doc/architecture.md) | How it works, package structure |
+| [SCIP Server](doc/scip-server.md) | JSON-RPC protocol server |
+| [MCP Integration](doc/mcp-integration.md) | Using with Cursor/AI agents |
+| [Monorepo Support](doc/monorepo.md) | Multi-package workspaces |
+| [Cross-Package Queries](doc/cross-package-queries.md) | Querying SDK and dependencies |
+| [Analyzer Integration](doc/analyzer-integration.md) | Sharing analyzer contexts |
 
 ## Performance
 
@@ -381,159 +105,59 @@ print(pkg?.name); // my_app
 | Cached startup | ~300ms (35x faster) |
 | Incremental update | ~100-200ms per file |
 | Query execution | <10ms |
-| Cache size | ~2.5MB for 85 files |
 
-## MCP Integration
+## Architecture
 
-### Using with Cursor
-
-A ready-to-use MCP server is included. Add to `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "dart_context": {
-      "type": "stdio",
-      "command": "dart",
-      "args": ["run", "/path/to/dart_context/bin/mcp_server.dart"]
-    }
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           CodeContext                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐│
+│  │ LLM / Agent  │────▶│ Query String │────▶│    QueryExecutor         ││
+│  └──────────────┘     └──────────────┘     └────────────┬─────────────┘│
+│                                                         ▼              │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                     LanguageBinding                              │  │
+│  │  Dart (DartBinding) | TypeScript (future) | Python (future)     │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│              ┌───────────────────┼───────────────────┐                 │
+│              ▼                   ▼                   ▼                 │
+│  ┌───────────────────┐  ┌───────────────┐  ┌────────────────────────┐ │
+│  │ LocalPackageIndex │  │ ScipIndex     │  │ ExternalPackageIndex   │ │
+│  │ + Indexer (live)  │  │ O(1) lookups  │  │ SDK/Flutter/pub        │ │
+│  └───────────────────┘  └───────────────┘  └────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-Restart Cursor, then ask Claude to use the tools:
-- "Use dart_status to check the index"
-- "Use dart_index_flutter to index the Flutter SDK"
-- "Use dart_query to find references to MyClass"
+[Full Architecture →](doc/architecture.md)
 
-### Available MCP Tools
+## Package Structure
 
-| Tool | Description |
-|------|-------------|
-| `dart_query` | Query codebase with DSL (refs, def, find, grep, etc.) |
-| `dart_index_flutter` | Index Flutter SDK packages (~1 min, one-time) |
-| `dart_index_deps` | Index pub dependencies from pubspec.lock |
-| `dart_refresh` | Refresh project index and reload dependencies |
-| `dart_status` | Show index status (files, symbols, packages loaded) |
+This project is organized as a Dart pub workspace:
 
-### Custom MCP Server
-
-Add `DartContextSupport` to your own MCP server:
-
-```dart
-import 'package:dart_context/dart_context_mcp.dart';
-import 'package:dart_mcp/server.dart';
-
-base class MyServer extends MCPServer 
-    with LoggingSupport, ToolsSupport, RootsTrackingSupport, DartContextSupport {
-  // Your server implementation
-}
+```
+code_context/
+├── packages/
+│   ├── scip_server/      # Language-agnostic SCIP protocol core
+│   └── dart_binding/     # Dart-specific implementation
+├── lib/                  # Root package (re-exports)
+├── bin/                  # CLI and MCP server
+└── doc/                  # Documentation
 ```
 
-The tools automatically:
-- Index project roots on first query
-- Cache indexes for fast subsequent queries  
-- Watch for file changes and update incrementally
-- Load pre-computed SDK/package indexes
-- Watch package_config.json and notify when deps change
+## Supported Languages
 
-## External Analyzer Integration
-
-When integrating with an existing analyzer (e.g., HologramAnalyzer), you can avoid
-creating duplicate analyzer contexts by using an adapter:
-
-```dart
-import 'package:dart_context/dart_context.dart';
-import 'package:analyzer/dart/analysis/results.dart';
-
-// Create an adapter that wraps your existing analyzer
-final adapter = HologramAnalyzerAdapter(
-  projectRoot: analyzer.projectRoot,
-  
-  // Delegate to your existing analyzer
-  getResolvedUnit: (path) async {
-    final result = await analyzer.getResolvedUnit(path);
-    return result is ResolvedUnitResult ? result : null;
-  },
-  
-  // Use your existing file watcher
-  fileChanges: fsWatcher.events.map((event) => FileChange(
-    path: event.path,
-    type: event.type.toFileChangeType(),
-    previousPath: event is FSMoveEvent ? event.previousPath : null,
-  )),
-);
-
-// Create indexer with shared analyzer
-final indexer = await IncrementalScipIndexer.openWithAdapter(
-  adapter,
-  packageConfig: packageConfig,
-  pubspec: pubspec,
-);
-
-// Query the index
-final executor = QueryExecutor(indexer.index);
-final result = await executor.execute('refs login');
-print(result.toText());
-```
-
-### With Fluxon Service (Hologram)
-
-```dart
-@ServiceContract(remote: true)
-class DartContextService extends FluxonService {
-  late final IncrementalScipIndexer _indexer;
-  
-  @override
-  Future<void> initialize() async {
-    await super.initialize();
-    
-    final adapter = HologramAnalyzerAdapter(
-      projectRoot: projectRootDirectory.path,
-      getResolvedUnit: (path) => _analyzer.getResolvedUnit(path),
-      fileChanges: _fsWatcher.events.map(_toFileChange),
-    );
-    
-    _indexer = await IncrementalScipIndexer.openWithAdapter(
-      adapter,
-      packageConfig: _packageConfig,
-      pubspec: _pubspec,
-    );
-  }
-  
-  @ServiceMethod()
-  Future<String> query(String dsl) async {
-    final executor = QueryExecutor(_indexer.index);
-    final result = await executor.execute(dsl);
-    return result.toText();
-  }
-}
-```
-
-### Incremental Updates from Resolved Units
-
-If you already have resolved units, you can update the index directly:
-
-```dart
-// When HologramAnalyzer completes analysis
-analyzer.onFileDartAnalysisCompleted = (filePath, result) {
-  if (result is ResolvedUnitResult) {
-    indexer.indexWithResolvedUnit(filePath, result);
-  }
-};
-```
-
-## TODO
-
-- Add path regex filter for `find`/`grep` (e.g., `path:/core\/(infra|db)\//`).
+| Language | Status | Binding |
+|----------|--------|---------|
+| Dart | ✅ Full support | `DartBinding` |
+| TypeScript | 🔜 Planned | - |
+| Python | 🔜 Planned | - |
 
 ## Related Projects
 
 - [scip-dart](https://github.com/Workiva/scip-dart) - SCIP indexer for Dart
 - [SCIP](https://github.com/sourcegraph/scip) - Code Intelligence Protocol
-- [dart_graph](https://github.com/example/dart_graph) - Full graph-based code intelligence (heavier)
 
 ## License
 
 MIT
-
