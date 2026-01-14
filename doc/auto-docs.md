@@ -14,35 +14,13 @@ code_context enables automatic generation of human-readable documentation using 
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Two-Stage Documentation Pipeline                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  STAGE 1: Generation (expensive, on structure change only)          │
-│                                                                      │
-│  ┌──────────────┐     ┌──────────────┐     ┌───────────────────┐   │
-│  │  SCIP Index  │────▶│  Structure   │────▶│  LLM Synthesis    │   │
-│  │              │     │  Hash Check  │     │  (if hash changed)│   │
-│  └──────────────┘     └──────────────┘     └─────────┬─────────┘   │
-│                                                       │             │
-│                                                       ▼             │
-│                                            ┌───────────────────┐   │
-│                                            │  Source Docs      │   │
-│                                            │  (scip:// links)  │   │
-│                                            └─────────┬─────────┘   │
-│                                                       │             │
-├───────────────────────────────────────────────────────┼─────────────┤
-│                                                       │             │
-│  STAGE 2: Link Resolution (cheap, on any file change)│             │
-│                                                       ▼             │
-│  ┌──────────────┐     ┌──────────────┐     ┌───────────────────┐   │
-│  │  SCIP Index  │────▶│  Link        │────▶│  Rendered Docs    │   │
-│  │  (current)   │     │  Transformer │     │  (navigable)      │   │
-│  └──────────────┘     └──────────────┘     └───────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+**Two-Stage Documentation Pipeline:**
+
+1. **Stage 1: Generation** (expensive, on structure change only)
+   - SCIP Index → Structure Hash Check → LLM Synthesis (if hash changed) → Source Docs with `scip://` links
+
+2. **Stage 2: Link Resolution** (cheap, on any file change)
+   - SCIP Index (current) → Link Transformer → Rendered Docs (navigable)
 
 ### Why Two Stages?
 
@@ -55,6 +33,108 @@ This separation means:
 - Implementation changes (no signature change) → Only re-resolve links, no LLM call
 - Line number changes → Only re-resolve links, no LLM call
 - Signature/API changes → Regenerate docs AND re-resolve links
+
+## Core Strategy: Folder-Based Cascading Documentation
+
+### Folder-Based vs Root-Only Approach
+
+We use a **folder-based cascading** approach instead of generating a single root-level doc directly from source.
+
+**Key insight**: Folder dependencies come from **actual `import` statements** in code:
+
+```dart
+// lib/features/auth/auth_service.dart
+import '../../../core/utils/helpers.dart';   // ← Code says this
+import '../../products/models/product.dart';  // ← Code says this
+```
+
+SCIP extracts these imports automatically → 100% reliable dependency graph.
+
+### Comparison: Initial Generation
+
+| Approach | Process | Cost |
+|----------|---------|------|
+| **Root-only** | Agent reads all source files, generates one doc | ~$0.25 |
+| **Folder-based** | Generate leaf docs → parent docs → root doc | ~$0.30 |
+
+Initial generation is similar cost. Folder-based is slightly more expensive due to multiple LLM calls, but produces more granular docs.
+
+### Comparison: Incremental Updates
+
+This is where the approaches diverge significantly.
+
+**Root-only approach** (what a normal agent would do):
+- Agent sees: "file X changed"
+- Reads the changed file(s) to understand what changed
+- Reads existing root doc to see what needs updating
+- May read additional related files for context
+- Updates relevant sections of the root doc
+
+**Folder-based approach** (our strategy):
+- Structure hash check: did the folder's API/signatures actually change?
+- If NO (implementation-only change) → skip LLM, just re-resolve links (cheap)
+- If YES → regenerate only that folder's doc + cascade to parents
+- Parents read child DOCS (not source) to update
+
+**Key advantages of folder-based:**
+
+1. **Structure hash filtering**: Many code changes don't affect documentation (refactoring, implementation tweaks). We skip LLM calls entirely for these.
+
+2. **Bounded context**: Each folder doc is generated with:
+   - Full source for THAT folder only
+   - Summaries (already-generated docs) for dependencies
+   - No need to figure out what's "related" - SCIP tells us via imports
+
+3. **Deterministic propagation**: When `lib/core/utils/` changes:
+   - We know exactly which folders depend on it (via import graph)
+   - We update only those folders, in topological order
+   - No guessing about what might be affected
+
+4. **Doc as atomic unit**: Non-leaf updates read DOCS, not source:
+   - Parent folder reads child's updated doc + diff
+   - Much smaller context than re-reading source files
+
+### Cost Estimate (100 Changes)
+
+Assuming a codebase with 50 folders, 200 files:
+
+| Scenario | Root-Only | Folder-Based |
+|----------|-----------|--------------|
+| Implementation-only change (no API change) | ~$0.05-0.10 | ~$0.00 (link resolution only) |
+| Single folder API change | ~$0.05-0.15 | ~$0.02 (folder + ancestors) |
+| Cross-cutting change (affects many folders) | ~$0.15-0.25 | ~$0.10-0.15 |
+
+Over 100 typical changes (mix of types):
+- Root-only: ~$8-15
+- Folder-based: ~$2-5
+
+The savings come primarily from:
+- Skipping LLM entirely for implementation-only changes
+- Using already-summarized docs instead of re-reading source
+
+### Compression Philosophy
+
+Different compression rates at different levels (mental model, not enforced):
+
+| Transition | Compression | Rationale |
+|------------|-------------|-----------|
+| Code → Leaf Doc | ~10x | Raw code is verbose (boilerplate, syntax) |
+| Doc → Parent Doc | ~2x | Docs are already curated - over-compressing loses signal |
+
+**Important**: We don't enforce these ratios in prompts. Let AI judge based on content density:
+- Core logic (information-dense) → longer docs
+- UI boilerplate (information-sparse) → shorter docs
+
+Future: User-configurable style/compression via YAML (deferred).
+
+### The Update Constraint
+
+**Rule**: For non-leaf folder updates, agents read DOCS, not source files.
+
+- **Leaf folder update**: Read source files in THIS folder only, plus subfolder docs
+- **Non-leaf folder update**: Read current doc + changed dependency docs (with diffs)
+
+This ensures token efficiency scales with doc hierarchy depth, not codebase size.
 
 ## Structure Hash (SCIP-Based)
 
@@ -251,16 +331,9 @@ Dependencies are tracked at **folder level**, aggregated from file imports:
 
 ```
 lib/features/auth/
-    ├── imports from (internal folders):
-    │   ├── lib/core/           ← include this folder's doc
-    │   └── lib/data/           ← include this folder's doc
-    │
-    ├── imports from (external packages):
-    │   ├── firebase_auth       ← include package docs
-    │   └── shared_preferences  ← include package docs
-    │
-    └── imported by (dependents):
-        └── lib/ui/auth/        ← mention what's used
+├── imports from (internal): lib/core/, lib/data/
+├── imports from (external): firebase_auth, shared_preferences
+└── imported by: lib/ui/auth/
 ```
 
 ### Building the Folder Graph
@@ -290,15 +363,11 @@ Map<String, Set<String>> buildFolderDependencies(ScipIndex index) {
 
 Use Tarjan's SCC algorithm:
 
-```
 1. Build folder dependency graph from imports
 2. Find SCCs (Strongly Connected Components) - folders that form cycles
 3. Topological sort of SCCs
 
-For cycles (A ↔ B):
-  Generate both folders in same LLM session with mutual context.
-  Agent sees both folders' code before generating either doc.
-```
+For cycles (A ↔ B): Generate both folders in same LLM session with mutual context.
 
 ## LLM Context Building
 
@@ -375,28 +444,12 @@ dependents:
 
 ### Context Layering
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Context for Folder A                          │
-├─────────────────────────────────────────────────────────────────┤
-│  FULL (current folder):                                          │
-│    - All source files                                            │
-│    - All doc comments                                            │
-│    - Full SCIP symbol info                                       │
-├─────────────────────────────────────────────────────────────────┤
-│  SUMMARY (folder dependencies):                                  │
-│    - Already-generated folder doc (compressed)                   │
-│    - Public API signatures only                                  │
-│    - Which specific symbols are used                             │
-├─────────────────────────────────────────────────────────────────┤
-│  EXTERNAL (package dependencies):                                │
-│    - Package README / existing docs                              │
-│    - Which specific symbols are used                             │
-├─────────────────────────────────────────────────────────────────┤
-│  MENTION (dependents):                                           │
-│    - Just which symbols are called by whom                       │
-└─────────────────────────────────────────────────────────────────┘
-```
+Context is structured in layers with decreasing detail:
+
+1. **FULL** (current folder): All source files, doc comments, full SCIP symbol info
+2. **SUMMARY** (folder dependencies): Already-generated docs, public API signatures, which symbols used
+3. **EXTERNAL** (package dependencies): Package README/docs, which symbols used
+4. **MENTION** (dependents): Just which symbols are called by whom
 
 **Why this layering?**
 
@@ -407,33 +460,29 @@ dependents:
 
 ## Bottom-Up Generation Flow
 
-```
 1. Build folder dependency graph
 2. Topological sort (handle cycles with SCC)
 3. Generate in order:
-
-   Level 0 (no dependencies): lib/core/, lib/models/
-      ↓ their docs become context for...
-   Level 1: lib/data/, lib/services/
-      ↓ their docs become context for...
-   Level 2: lib/features/auth/, lib/features/products/
-      ↓ their docs become context for...
-   Level 3: lib/ui/
-      ↓
-   Module docs (synthesize folder docs)
-      ↓
-   Project doc (synthesize module docs)
-```
+   - Level 0 (no dependencies): lib/core/, lib/models/
+   - Level 1: lib/data/, lib/services/ (use Level 0 docs as context)
+   - Level 2: lib/features/auth/, lib/features/products/ (use Level 0-1 docs)
+   - Level 3: lib/ui/ (use all previous docs)
+   - Module docs (synthesize folder docs)
+   - Project doc (synthesize module docs)
 
 ## Manifest Schema
 
 ```json
 {
   "version": 1,
+  "packages": {
+    "firebase_auth": "4.6.0",
+    "shared_preferences": "2.2.0"
+  },
   "folders": {
     "lib/features/auth/": {
-      "structureHash": "abc123...",      // SCIP structure hash
-      "docHash": "def456...",            // Hash of generated doc
+      "structureHash": "abc123...",
+      "docHash": "def456...",
       "generatedAt": "2025-01-12T10:00:00Z",
       "dependencies": {
         "internal": ["lib/core/", "lib/data/"],
@@ -456,37 +505,19 @@ dependents:
 
 ## Dirty Detection Flow
 
-```
 On file save / git commit:
 
 1. Reindex folder with SCIP (incremental)
-
-2. Compute new structure hash:
-   newHash = computeFolderStructureHash(folder, newIndex)
-
+2. Compute new structure hash
 3. Compare with stored hash:
-   if (newHash != manifest.folders[folder].structureHash) {
-     // Structure changed - need LLM regeneration
-     markDirtyForRegen(folder)
-     propagateUp(folder)  // Module → Project
-   }
-
-4. Always re-resolve links (cheap):
-   transformAllDocs(newIndex)
-```
+   - If different → mark folder dirty for LLM regeneration, propagate to ancestors
+   - If same → skip LLM regeneration
+4. Always re-resolve links (cheap)
 
 ### Propagation Rules
 
-```
-UPWARD (always):
-  Folder dirty → Module dirty → Project dirty
-
-SIDEWAYS (via smart symbols):
-  auth/ signature changes →
-    For each folder F:
-      If F has smart symbols pointing to changed auth/ symbols:
-        markDirtyForRegen(F)
-```
+- **UPWARD** (always): Folder dirty → Module dirty → Project dirty
+- **SIDEWAYS** (via smart symbols): If folder F has smart symbols pointing to changed symbols, mark F dirty
 
 ## LLM Output Structure
 
@@ -551,18 +582,6 @@ Authentication and authorization for the application.
 - [`AuthService`][auth-service] - Primary interface
 - [`AuthState`][auth-state] - State enum
 - [`User`][user] - Authenticated user model
-
-## Data Flow
-
-```
-LoginPage (UI)
-    ↓ calls
-AuthService (Service)
-    ↓ calls
-AuthRepository (Data)
-    ↓ uses
-Firebase Auth (External)
-```
 
 [auth-service]: scip://lib/features/auth/auth_service.dart/AuthService#
 [auth-state]: scip://lib/features/auth/auth_state.dart/AuthState#
@@ -642,15 +661,14 @@ code_context docs generate --link-style relative|github|absolute
 
 **Benefit**: Implementation body changes don't trigger regen.
 
-### 3. Folder-Level Dependencies
+### 3. Folder-Level Dependencies from Code
 
-**Problem**: File-level dependencies are too granular.
+**Problem**: How to track what each folder depends on?
 
-**Decision**: Aggregate imports to folder level:
-- `lib/features/auth/` depends on `lib/core/`
-- Use folder docs as dependency context, not individual files
-
-**Benefit**: Simpler graph, better matches conceptual organization.
+**Decision**: Extract from actual `import` statements (via SCIP):
+- 100% accurate - imports are ground truth
+- No AI in the dependency detection loop
+- Guaranteed to catch all structural changes that affect imports
 
 ### 4. Bottom-Up with Topological Sort
 
@@ -667,17 +685,18 @@ code_context docs generate --link-style relative|github|absolute
 
 **Decision**: Include existing package documentation (README, pub.dev):
 - Note which symbols are used from each package
-- Don't descend into package internals (expensive, low value)
+- Track package versions in manifest
+- Treat external package docs as linkable targets
 
 **Future**: May generate docs for poorly-documented packages.
 
 ### 6. Agentic Generation
 
 **Decision**: Use agent with tools rather than fixed pipeline:
-- `read_file(path)` - Read source files
+- `read_file(path)` - Read source files (leaf level only)
 - `query_scip(query)` - Query the SCIP index
-- `read_doc(path)` - Read already-generated folder docs
-- `list_files(folder)` - Explore folder structure
+- `read_subfolder_doc(path)` - Read already-generated folder docs
+- `list_folder(folder)` - Explore folder structure
 
 **Benefit**: Agent handles large folders, non-Dart files, varying complexity.
 
@@ -715,12 +734,13 @@ Secondary: Developer onboarding and reference.
 3. **Flutter semantics**: Navigation flows, widget layers
 4. **Folder-level granularity**: Matches conceptual organization
 5. **External package context**: Use existing docs efficiently
+6. **100% reliable dependency tracking**: Uses code imports, not AI heuristics
 
 ## Deferred (Future Consideration)
 
 - Quality signals and validation
 - CI/CD integration  
-- Prompt customization / config files
+- Prompt customization / config files (style, compression, audience)
 - Generate docs for poorly-documented external packages
 
 ## Known Limitations
@@ -732,18 +752,19 @@ Secondary: Developer onboarding and reference.
 
 ## Implementation Status
 
-- [ ] Structure hash computation from SCIP
-- [ ] Folder dependency graph builder
-- [ ] SCC detection for circular dependencies
-- [ ] Topological sort for generation order
-- [ ] Doc manifest schema and storage
-- [ ] LLM context builder (folder → YAML)
-- [ ] LLM synthesis pipeline (agentic)
-- [ ] Smart symbol extraction from LLM output
-- [ ] Link transformer (scip:// → file:line)
-- [ ] Dirty detection and propagation
-- [ ] CLI commands
+- [x] Structure hash computation from SCIP
+- [x] Folder dependency graph builder
+- [x] SCC detection for circular dependencies
+- [x] Topological sort for generation order
+- [x] Doc manifest schema and storage
+- [x] LLM context builder (folder → YAML)
+- [x] LLM synthesis pipeline (agentic)
+- [x] Smart symbol extraction from LLM output
+- [x] Link transformer (scip:// → file:line)
+- [x] Dirty detection and propagation
+- [x] CLI commands
 - [ ] External package doc integration
+- [ ] Diff-based update prompts for non-leaf folders
 
 ## Related
 
