@@ -1,8 +1,15 @@
-/// Lightweight semantic code intelligence for Dart.
+/// Language-agnostic semantic code intelligence.
 ///
 /// Query your codebase with a simple DSL:
 /// ```dart
-/// final context = await DartContext.open('/path/to/project');
+/// // Auto-detect language from project files
+/// final context = await CodeContext.open('/path/to/project');
+///
+/// // Or specify a binding explicitly
+/// final context = await CodeContext.open(
+///   '/path/to/project',
+///   binding: DartBinding(),
+/// );
 ///
 /// // Find definition
 /// final result = await context.query('def AuthRepository');
@@ -10,12 +17,17 @@
 /// // Find references
 /// final refs = await context.query('refs login');
 ///
-/// // Get class members
-/// final members = await context.query('members MyClass');
+/// // Load dependencies for cross-package queries
+/// await context.loadDependencies();
 ///
-/// // Search with filters
-/// final classes = await context.query('find Auth* kind:class');
+/// // Query with full dependency support
+/// final hierarchy = await context.query('hierarchy MyWidget');
 /// ```
+///
+/// ## Supported Languages
+///
+/// - Dart (via `DartBinding` from `dart_binding` package)
+/// - More languages coming soon...
 ///
 /// ## Works with any folder structure
 ///
@@ -24,37 +36,10 @@
 /// - Melos mono repos
 /// - Dart pub workspaces
 /// - Any folder with multiple packages
-///
-/// ## Integration with External Analyzers
-///
-/// When integrating with an existing analyzer (e.g., HologramAnalyzer):
-///
-/// ```dart
-/// import 'package:dart_context/dart_context.dart';
-///
-/// final adapter = HologramAnalyzerAdapter(
-///   projectRoot: analyzer.projectRoot,
-///   getResolvedUnit: (path) async {
-///     final result = await analyzer.getResolvedUnit(path);
-///     return result is ResolvedUnitResult ? result : null;
-///   },
-///   fileChanges: watcher.events.map((e) => FileChange(
-///     path: e.path,
-///     type: e.type.toFileChangeType(),
-///   )),
-/// );
-///
-/// final indexer = await IncrementalScipIndexer.openWithAdapter(
-///   adapter,
-///   packageConfig: packageConfig,
-///   pubspec: pubspec,
-/// );
-/// ```
 library;
 
 // Main entry point
-export 'src/dart_context.dart';
-export 'src/root_watcher.dart' show RootWatcher;
+export 'src/code_context.dart';
 
 // Re-export scip_server package (language-agnostic core)
 export 'package:scip_server/scip_server.dart'
@@ -102,8 +87,14 @@ export 'package:scip_server/scip_server.dart'
         ErrorResult,
         // Language binding
         LanguageBinding,
+        LanguageContext,
         DiscoveredPackage,
         PackageIndexer,
+        IndexUpdate,
+        InitialIndexUpdate,
+        FileUpdatedUpdate,
+        FileRemovedUpdate,
+        IndexErrorUpdate,
         // Protocol server
         ScipServer,
         ScipMethod,
@@ -121,7 +112,9 @@ export 'package:dart_binding/dart_binding.dart'
     show
         // Main binding
         DartBinding,
+        DartLanguageContext,
         DartPackageIndexer,
+        RootWatcher,
         // Indexing
         IncrementalScipIndexer,
         IndexCache,
@@ -130,13 +123,8 @@ export 'package:dart_binding/dart_binding.dart'
         BatchIndexResult,
         PackageIndexResult,
         FlutterIndexResult,
-        IndexUpdate,
-        InitialIndexUpdate,
         CachedIndexUpdate,
         IncrementalIndexUpdate,
-        FileUpdatedUpdate,
-        FileRemovedUpdate,
-        IndexErrorUpdate,
         // Package management
         PackageRegistry,
         PackageRegistryProvider,
@@ -176,15 +164,16 @@ export 'package:dart_binding/dart_binding.dart'
 // │   ├── ScipIndex             # In-memory SCIP index
 // │   ├── QueryExecutor         # DSL query execution
 // │   ├── LanguageBinding       # Interface for language implementations
+// │   ├── LanguageContext       # Abstract context interface
 // │   └── ScipServer            # JSON-RPC protocol server
 // │
 // └── dart_binding/             # Dart-specific implementation
 //     ├── DartBinding           # LanguageBinding implementation
+//     ├── DartLanguageContext   # LanguageContext implementation
 //     ├── IncrementalScipIndexer # Incremental Dart indexer
 //     ├── PackageRegistry       # Multi-package management
 //     └── PackageDiscovery      # Pubspec.yaml discovery
 //
-// The root package (dart_context) provides:
-// - DartContext: High-level API combining the above
-// - RootWatcher: File watching for incremental updates
+// The root package (code_context) provides:
+// - CodeContext: High-level API using LanguageBinding
 // - MCP server integration

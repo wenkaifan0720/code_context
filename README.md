@@ -1,9 +1,10 @@
-# dart_context
+# code_context
 
-Lightweight semantic code intelligence for Dart. Query your codebase with a simple DSL.
+Language-agnostic semantic code intelligence. Query your codebase with a simple DSL.
 
 ## Features
 
+- **Multi-language support**: Extensible architecture with Dart as the first supported language
 - **Index caching**: Persistent cache for instant startup (~300ms vs ~10s)
 - **Incremental indexing**: Watches files and updates the index automatically
 - **Simple query DSL**: Human and LLM-friendly query language
@@ -16,19 +17,23 @@ Lightweight semantic code intelligence for Dart. Query your codebase with a simp
 
 ```bash
 # As a library
-dart pub add dart_context
+dart pub add code_context
 
 # As a CLI tool
-dart pub global activate dart_context
+dart pub global activate code_context
 ```
 
 ### Library Usage
 
 ```dart
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main() async {
-  final context = await DartContext.open('/path/to/project');
+  // Generic: auto-detect language
+  final context = await CodeContext.open('/path/to/project');
+
+  // Or use Dart-specific context with full features
+  final dartContext = await DartContext.open('/path/to/dart/project');
 
   // Query with DSL
   final result = await context.query('def AuthRepository');
@@ -46,16 +51,22 @@ void main() async {
 
 ```bash
 # Find definition
-dart_context def AuthRepository
+code_context def AuthRepository
 
 # Find references  
-dart_context refs login
+code_context refs login
 
 # Search with filters
-dart_context "find Auth* kind:class"
+code_context "find Auth* kind:class"
 
 # Interactive mode
-dart_context -i
+code_context -i
+
+# Dart-specific commands (namespaced with dart:)
+code_context dart:index-sdk /path/to/sdk
+code_context dart:index-flutter
+code_context dart:index-deps
+code_context dart:list-indexes
 ```
 
 ## Query DSL
@@ -99,15 +110,15 @@ dart_context -i
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           DartContext                                   │
+│                           CodeContext                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐│
 │  │ LLM / Agent  │────▶│ Query String │────▶│    QueryExecutor         ││
 │  └──────────────┘     └──────────────┘     └────────────┬─────────────┘│
 │                                                         ▼              │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                     PackageRegistry                              │  │
-│  │  Local packages (mutable) + External packages (cached)          │  │
+│  │                     LanguageBinding                              │  │
+│  │  Dart (DartBinding) | TypeScript (future) | Python (future)     │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
 │              ┌───────────────────┼───────────────────┐                 │
 │              ▼                   ▼                   ▼                 │
@@ -125,7 +136,7 @@ dart_context -i
 This project is organized as a Dart pub workspace:
 
 ```
-dart_context/
+code_context/
 ├── packages/
 │   ├── scip_server/      # Language-agnostic SCIP protocol core
 │   └── dart_binding/     # Dart-specific implementation
@@ -133,6 +144,14 @@ dart_context/
 ├── bin/                  # CLI and MCP server
 └── doc/                  # Documentation
 ```
+
+## Supported Languages
+
+| Language | Status | Binding |
+|----------|--------|---------|
+| Dart | ✅ Full support | `DartBinding` |
+| TypeScript | 🔜 Planned | - |
+| Python | 🔜 Planned | - |
 
 ## Related Projects
 

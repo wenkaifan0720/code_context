@@ -1,6 +1,6 @@
-// Copyright (c) 2025. Dart code intelligence MCP server.
+// Copyright (c) 2025. Code intelligence MCP server.
 /// 
-/// This server provides semantic code intelligence for Dart via MCP.
+/// This server provides semantic code intelligence via MCP.
 /// 
 /// ## Usage with Cursor
 /// 
@@ -8,9 +8,9 @@
 /// ```json
 /// {
 ///   "mcpServers": {
-///     "dart_context": {
+///     "code_context": {
 ///       "command": "dart",
-///       "args": ["run", "/path/to/dart_context/bin/mcp_server.dart"]
+///       "args": ["run", "/path/to/code_context/bin/mcp_server.dart"]
 ///     }
 ///   }
 /// }
@@ -29,23 +29,23 @@ import 'dart:io' as io;
 
 import 'package:dart_mcp/server.dart';
 import 'package:dart_mcp/stdio.dart';
-import 'package:dart_context/dart_context_mcp.dart';
+import 'package:code_context/code_context_mcp.dart';
 
 void main() {
   // Create the server and connect it to stdio.
-  DartContextServer(stdioChannel(input: io.stdin, output: io.stdout));
+  CodeContextServer(stdioChannel(input: io.stdin, output: io.stdout));
 }
 
-/// MCP server with Dart code intelligence support.
-base class DartContextServer extends MCPServer
-    with LoggingSupport, ToolsSupport, RootsTrackingSupport, DartContextSupport {
-  DartContextServer(super.channel)
+/// MCP server with code intelligence support.
+base class CodeContextServer extends MCPServer
+    with LoggingSupport, ToolsSupport, RootsTrackingSupport, CodeContextSupport {
+  CodeContextServer(super.channel)
       : super.fromStreamChannel(
           implementation: Implementation(
-            name: 'dart_context',
+            name: 'code_context',
             version: '1.0.0',
           ),
-          instructions: '''Dart code intelligence server.
+          instructions: '''Code intelligence server.
 
 Use dart_status to check index status.
 Use dart_index_flutter to index Flutter SDK (one-time setup).
@@ -60,4 +60,3 @@ Example queries:
 ''',
         );
 }
-

@@ -1,6 +1,6 @@
-name: dart_context
-description: Lightweight semantic code intelligence for Dart. Query your codebase with a simple DSL.
-version: 0.2.0
+name: code_context
+description: Language-agnostic semantic code intelligence. Query your codebase with a simple DSL.
+version: 0.3.0
 
 environment:
   sdk: ^3.5.0
@@ -9,6 +9,12 @@ environment:
 workspace:
   - packages/scip_server
   - packages/dart_binding
+
+# CLI executables
+executables:
+  code_context: code_context
+  scip_server: scip_server
+  mcp_server: mcp_server
 
 dependencies:
   # Workspace packages

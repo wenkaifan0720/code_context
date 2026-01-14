@@ -3,35 +3,58 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:dart_context/dart_context.dart';
+import 'package:code_context/code_context.dart';
 
 void main(List<String> arguments) async {
+  // Register language bindings for auto-detection
+  CodeContext.registerBinding(DartBinding());
+
   // Check for subcommands first
   if (arguments.isNotEmpty) {
-    switch (arguments.first) {
-      case 'index-sdk':
-        await _indexSdk(arguments.skip(1).toList());
-        return;
-      case 'index-flutter':
-        await _indexFlutter(arguments.skip(1).toList());
-        return;
-      case 'index-deps':
-        await _indexDependencies(arguments.skip(1).toList());
-        return;
-      case 'list-indexes':
-        await _listIndexes();
-        return;
+    final cmd = arguments.first;
+
+    // Generic commands
+    switch (cmd) {
       case 'list-packages':
         await _listPackages(arguments.skip(1).toList());
         return;
     }
+
+    // Dart-specific commands (dart: prefix)
+    if (cmd.startsWith('dart:')) {
+      final dartCmd = cmd.substring(5);
+      switch (dartCmd) {
+        case 'index-sdk':
+          await _dartIndexSdk(arguments.skip(1).toList());
+          return;
+        case 'index-flutter':
+          await _dartIndexFlutter(arguments.skip(1).toList());
+          return;
+        case 'index-deps':
+          await _dartIndexDependencies(arguments.skip(1).toList());
+          return;
+        case 'list-indexes':
+          await _dartListIndexes();
+          return;
+        default:
+          stderr.writeln('Unknown Dart command: dart:$dartCmd');
+          stderr.writeln('');
+          stderr.writeln('Available Dart commands:');
+          stderr.writeln('  dart:index-sdk      Index Dart SDK');
+          stderr.writeln('  dart:index-flutter  Index Flutter packages');
+          stderr.writeln('  dart:index-deps     Index pub dependencies');
+          stderr.writeln('  dart:list-indexes   List available indexes');
+          exit(1);
+      }
+    }
+
   }
 
   final parser = ArgParser()
     ..addOption(
       'project',
       abbr: 'p',
-      help: 'Path to the Dart project (defaults to current directory)',
+      help: 'Path to the project (defaults to current directory)',
       defaultsTo: '.',
     )
     ..addOption(
@@ -60,7 +83,7 @@ void main(List<String> arguments) async {
     )
     ..addFlag(
       'with-deps',
-      help: 'Load pre-indexed dependencies for cross-package queries',
+      help: 'Load pre-indexed dependencies for cross-package queries (Dart)',
       defaultsTo: false,
     )
     ..addFlag(
@@ -91,16 +114,17 @@ void main(List<String> arguments) async {
   final noCache = args['no-cache'] as bool;
   final withDeps = args['with-deps'] as bool;
 
-  // Validate project path
-  final pubspecFile = File('$projectPath/pubspec.yaml');
-  if (!await pubspecFile.exists()) {
-    // Check if there are any packages in the directory
-    final discovery = await PackageDiscovery().discoverPackages(projectPath);
-    if (discovery.packages.isEmpty) {
-      stderr.writeln('Error: No Dart packages found in $projectPath');
-      stderr.writeln('Make sure you are in a Dart project directory.');
-      exit(1);
-    }
+  // For Dart projects, use CodeContext with DartBinding
+  // For other languages, use CodeContext
+  final isDartProject = await File('$projectPath/pubspec.yaml').exists() ||
+      (await PackageDiscovery().discoverPackages(projectPath))
+          .packages
+          .isNotEmpty;
+
+  if (!isDartProject) {
+    stderr.writeln('Error: No supported project found in $projectPath');
+    stderr.writeln('Supported languages: Dart (pubspec.yaml)');
+    exit(1);
   }
 
   stderr.writeln('Opening project: $projectPath');
@@ -108,11 +132,12 @@ void main(List<String> arguments) async {
     stderr.writeln('Loading pre-indexed dependencies...');
   }
 
-  DartContext? context;
+  CodeContext? context;
   try {
     final stopwatch = Stopwatch()..start();
-    context = await DartContext.open(
+    context = await CodeContext.open(
       projectPath,
+      binding: DartBinding(),
       watch: watch || interactive,
       useCache: !noCache,
       loadDependencies: withDeps,
@@ -121,8 +146,9 @@ void main(List<String> arguments) async {
 
     final pkgCount = context.packageCount;
     final pkgInfo = pkgCount > 1 ? ' across $pkgCount packages' : '';
-    final depsInfo = withDeps && context.hasDependencies
-        ? ', ${context.registry.packageIndexes.length} external packages loaded'
+    final registry = _getRegistry(context);
+    final depsInfo = withDeps && context.hasDependencies && registry != null
+        ? ', ${registry.packageIndexes.length} external packages loaded'
         : '';
     stderr.writeln(
       'Indexed ${context.stats['files']} files, '
@@ -159,22 +185,22 @@ void main(List<String> arguments) async {
 }
 
 void _printUsage(ArgParser parser) {
-  stdout.writeln(
-      'dart_context - Lightweight semantic code intelligence for Dart');
+  stdout.writeln('code_context - Language-agnostic semantic code intelligence');
   stdout.writeln('');
-  stdout.writeln('Usage: dart_context [options] <query>');
-  stdout.writeln('       dart_context <subcommand> [args]');
+  stdout.writeln('Usage: code_context [options] <query>');
+  stdout.writeln('       code_context <subcommand> [args]');
   stdout.writeln('');
   stdout.writeln('Options:');
   stdout.writeln(parser.usage);
   stdout.writeln('');
   stdout.writeln('Subcommands:');
-  stdout.writeln('  index-sdk <sdk-path>   Pre-index the Dart SDK');
-  stdout.writeln('  index-flutter [path]   Pre-index Flutter packages');
-  stdout.writeln('  index-deps [path]      Pre-index all pub dependencies');
-  stdout.writeln(
-      '  list-indexes           List available pre-computed indexes');
   stdout.writeln('  list-packages [path]   List discovered packages');
+  stdout.writeln('');
+  stdout.writeln('Dart-specific commands:');
+  stdout.writeln('  dart:index-sdk <path>  Pre-index the Dart SDK');
+  stdout.writeln('  dart:index-flutter     Pre-index Flutter packages');
+  stdout.writeln('  dart:index-deps        Pre-index pub dependencies');
+  stdout.writeln('  dart:list-indexes      List available Dart indexes');
   stdout.writeln('');
   stdout.writeln('Query DSL:');
   stdout.writeln('  def <symbol>           Find definition');
@@ -217,37 +243,47 @@ void _printUsage(ArgParser parser) {
   stdout.writeln('  grep TODO | refs         Process results through pipes');
   stdout.writeln('');
   stdout.writeln('Examples:');
-  stdout.writeln('  dart_context def AuthRepository');
-  stdout.writeln('  dart_context refs login');
-  stdout.writeln('  dart_context "find Auth* kind:class"');
-  stdout.writeln('  dart_context "grep TODO -c"');
-  stdout.writeln('  dart_context "grep /TODO|FIXME/ -l"');
-  stdout.writeln('  dart_context "find *Service | members"');
-  stdout.writeln('  dart_context -i                    # Interactive mode');
-  stdout.writeln('  dart_context -w                    # Watch mode');
+  stdout.writeln('  code_context def AuthRepository');
+  stdout.writeln('  code_context refs login');
+  stdout.writeln('  code_context "find Auth* kind:class"');
+  stdout.writeln('  code_context "grep TODO -c"');
+  stdout.writeln('  code_context "grep /TODO|FIXME/ -l"');
+  stdout.writeln('  code_context "find *Service | members"');
+  stdout.writeln('  code_context -i                    # Interactive mode');
+  stdout.writeln('  code_context -w                    # Watch mode');
   stdout.writeln(
-      '  dart_context -w "find * kind:class"  # Watch + re-run on changes');
+      '  code_context -w "find * kind:class" # Watch + re-run on changes');
   stdout.writeln('');
-  stdout.writeln('Pre-indexing dependencies (for cross-package queries):');
-  stdout.writeln('  dart_context index-sdk /path/to/dart-sdk');
-  stdout.writeln('  dart_context index-deps');
-  stdout.writeln('  dart_context --with-deps "hierarchy MyClass"');
+  stdout.writeln('Dart: Pre-indexing dependencies (for cross-package queries):');
+  stdout.writeln('  code_context dart:index-sdk /path/to/dart-sdk');
+  stdout.writeln('  code_context dart:index-deps');
+  stdout.writeln('  code_context --with-deps "hierarchy MyClass"');
   stdout.writeln('');
   stdout.writeln('Mono repo / workspace support:');
-  stdout.writeln('  dart_context list-packages /path/to/monorepo');
-  stdout.writeln('  dart_context -p /path/to/monorepo stats');
+  stdout.writeln('  code_context list-packages /path/to/monorepo');
+  stdout.writeln('  code_context -p /path/to/monorepo stats');
 }
 
 void _printResult(QueryResult result, String format) {
   if (format == 'json') {
-    stdout.writeln(const JsonEncoder.withIndent('  ').convert(result.toJson()));
+    stdout
+        .writeln(const JsonEncoder.withIndent('  ').convert(result.toJson()));
   } else {
     stdout.writeln(result.toText());
   }
 }
 
+/// Get the Dart registry from a context (Dart-specific).
+PackageRegistry? _getRegistry(CodeContext context) {
+  final langContext = context.context;
+  if (langContext is DartLanguageContext) {
+    return langContext.registry;
+  }
+  return null;
+}
+
 Future<void> _runWatch(
-  DartContext context,
+  CodeContext context,
   String format,
   String? query,
 ) async {
@@ -308,7 +344,7 @@ Future<void> _runWatch(
   stderr.writeln('Watch mode stopped.');
 }
 
-Future<void> _runInteractive(DartContext context, String format) async {
+Future<void> _runInteractive(CodeContext context, String format) async {
   stdout.writeln('');
   stdout.writeln('Interactive mode. Type "help" for commands, "quit" to exit.');
   stdout.writeln('');
@@ -355,8 +391,8 @@ Future<void> _runInteractive(DartContext context, String format) async {
         stdout.writeln('  /TODO|FIXME/          Regex pattern');
         stdout.writeln('  /error/i              Case-insensitive regex');
         stdout.writeln('  ~authentcate          Fuzzy (typo-tolerant)');
-        stdout
-            .writeln('  Class.method          Qualified name (disambiguation)');
+        stdout.writeln(
+            '  Class.method          Qualified name (disambiguation)');
         stdout.writeln('');
         stdout.writeln('Filters (for find/grep):');
         stdout.writeln('  kind:class            Filter by kind');
@@ -371,8 +407,8 @@ Future<void> _runInteractive(DartContext context, String format) async {
         stdout.writeln('  -w                    Word boundary matching');
         stdout.writeln('  -v                    Invert match');
         stdout.writeln('  -D                    Search external dependencies');
-        stdout
-            .writeln('  -C:3                  Context lines (before + after)');
+        stdout.writeln(
+            '  -C:3                  Context lines (before + after)');
         stdout.writeln('  -A:5 -B:2             Lines after / before');
         stdout.writeln('');
         stdout.writeln('Pipe Queries:');
@@ -405,14 +441,20 @@ Future<void> _runInteractive(DartContext context, String format) async {
   stdout.writeln('Goodbye!');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Dart-specific commands (dart: prefix)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Index the Dart/Flutter SDK for cross-package queries.
-Future<void> _indexSdk(List<String> args) async {
+Future<void> _dartIndexSdk(List<String> args) async {
   if (args.isEmpty) {
-    stderr.writeln('Usage: dart_context index-sdk <sdk-path>');
+    stderr.writeln('Usage: code_context dart:index-sdk <sdk-path>');
     stderr.writeln('');
     stderr.writeln('Example:');
-    stderr.writeln('  dart_context index-sdk /opt/flutter/bin/cache/dart-sdk');
-    stderr.writeln('  dart_context index-sdk \$(dirname \$(which dart))/..');
+    stderr.writeln(
+        '  code_context dart:index-sdk /opt/flutter/bin/cache/dart-sdk');
+    stderr.writeln(
+        '  code_context dart:index-sdk \$(dirname \$(which dart))/..');
     exit(1);
   }
 
@@ -459,7 +501,7 @@ Future<void> _indexSdk(List<String> args) async {
 }
 
 /// Index the Flutter framework packages.
-Future<void> _indexFlutter(List<String> args) async {
+Future<void> _dartIndexFlutter(List<String> args) async {
   // Default to FLUTTER_ROOT env var or common paths
   String? flutterPath;
   if (args.isNotEmpty) {
@@ -480,15 +522,15 @@ Future<void> _indexFlutter(List<String> args) async {
   }
 
   if (flutterPath == null || !await Directory(flutterPath).exists()) {
-    stderr.writeln('Usage: dart_context index-flutter [flutter-path]');
+    stderr.writeln('Usage: code_context dart:index-flutter [flutter-path]');
     stderr.writeln('');
     stderr.writeln(
         'If no path is provided, uses FLUTTER_ROOT environment variable');
     stderr.writeln('or tries to find Flutter from PATH.');
     stderr.writeln('');
     stderr.writeln('Example:');
-    stderr.writeln('  dart_context index-flutter');
-    stderr.writeln('  dart_context index-flutter /opt/flutter');
+    stderr.writeln('  code_context dart:index-flutter');
+    stderr.writeln('  code_context dart:index-flutter /opt/flutter');
     exit(1);
   }
 
@@ -574,7 +616,7 @@ Future<void> _indexFlutter(List<String> args) async {
 }
 
 /// Index all pub dependencies for cross-package queries.
-Future<void> _indexDependencies(List<String> args) async {
+Future<void> _dartIndexDependencies(List<String> args) async {
   final projectPath = args.isNotEmpty ? args.first : '.';
 
   final lockfile = File('$projectPath/pubspec.lock');
@@ -616,12 +658,12 @@ Future<void> _indexDependencies(List<String> args) async {
   }
 }
 
-/// List available pre-computed indexes.
-Future<void> _listIndexes() async {
+/// List available pre-computed indexes (Dart-specific).
+Future<void> _dartListIndexes() async {
   final registry = PackageRegistry(rootPath: '.');
   final builder = ExternalIndexBuilder(registry: registry);
 
-  stdout.writeln('Pre-computed indexes in ${CachePaths.globalCacheDir}:');
+  stdout.writeln('Pre-computed Dart indexes in ${CachePaths.globalCacheDir}:');
   stdout.writeln('');
 
   // List SDK indexes
@@ -696,10 +738,14 @@ Future<void> _listIndexes() async {
   }
   stdout.writeln('');
 
-  stdout.writeln('To index SDK: dart_context index-sdk <path>');
-  stdout.writeln('To index Flutter: dart_context index-flutter');
-  stdout.writeln('To index deps: dart_context index-deps');
+  stdout.writeln('To index SDK: code_context dart:index-sdk <path>');
+  stdout.writeln('To index Flutter: code_context dart:index-flutter');
+  stdout.writeln('To index deps: code_context dart:index-deps');
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic commands
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// List discovered packages in a directory.
 Future<void> _listPackages(List<String> args) async {
@@ -708,38 +754,34 @@ Future<void> _listPackages(List<String> args) async {
   stderr.writeln('Discovering packages in $path...');
 
   final stopwatch = Stopwatch()..start();
-  final discovery = await PackageDiscovery().discoverPackages(path);
-  stopwatch.stop();
 
-  stdout.writeln('');
-  stdout.writeln('Discovered ${discovery.packages.length} packages in ${stopwatch.elapsedMilliseconds}ms:');
-  stdout.writeln('');
+  // Try each registered binding
+  for (final binding in CodeContext.registeredBindings) {
+    final packages = await binding.discoverPackages(path);
+    if (packages.isNotEmpty) {
+      stopwatch.stop();
+      stdout.writeln('');
+      stdout.writeln(
+          'Found ${packages.length} ${binding.languageId} packages in ${stopwatch.elapsedMilliseconds}ms:');
+      stdout.writeln('');
 
-  if (discovery.packages.isEmpty) {
-    stdout.writeln('  (no packages found)');
-    stdout.writeln('');
-    stdout.writeln('Make sure the directory contains Dart packages with pubspec.yaml files.');
-    return;
-  }
-
-  for (final pkg in discovery.packages) {
-    stdout.writeln('  ${pkg.name}');
-    stdout.writeln('    Path: ${pkg.relativePath}');
-  }
-  stdout.writeln('');
-
-  // Check for existing workspace cache
-  final cacheDir = CachePaths.workspaceDir(discovery.rootPath);
-  final cacheExists = await Directory(cacheDir).exists();
-  if (cacheExists) {
-    stdout.writeln('Cache: $cacheDir');
-    final localDir = Directory('$cacheDir/local');
-    if (await localDir.exists()) {
-      final indexed =
-          await localDir.list().where((e) => e is Directory).length;
-      stdout.writeln('Indexed packages: $indexed');
+      for (final pkg in packages) {
+        final cacheDir = '${pkg.path}/.${binding.languageId}_context';
+        final hasCache = await Directory(cacheDir).exists();
+        final cacheStatus = hasCache ? '✓ indexed' : '○ not indexed';
+        stdout.writeln('  ${pkg.name} ($cacheStatus)');
+        stdout.writeln('    Path: ${pkg.path}');
+      }
+      return;
     }
-  } else {
-    stdout.writeln('Cache: (not initialized)');
+  }
+
+  stopwatch.stop();
+  stdout.writeln('');
+  stdout.writeln('No packages found in $path');
+  stdout.writeln('');
+  stdout.writeln('Supported languages:');
+  for (final binding in CodeContext.registeredBindings) {
+    stdout.writeln('  - ${binding.languageId} (${binding.packageFile})');
   }
 }
