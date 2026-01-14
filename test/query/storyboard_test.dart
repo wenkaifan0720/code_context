@@ -34,14 +34,13 @@ void main() {
         expect(text, contains('2 navigation edges'));
         expect(text, contains('Router: navigator'));
         expect(text, contains('Entry: LoginPage'));
-        expect(text, contains('```mermaid'));
-        expect(text, contains('flowchart TD'));
+        expect(text, contains('### Graph'));
         expect(text, contains('LoginPage'));
         expect(text, contains('HomePage'));
         expect(text, contains('SettingsPage'));
       });
 
-      test('generates ascii diagram when format is ascii', () {
+      test('generates text diagram when format is ascii', () {
         const result = StoryboardResult(
           screens: [
             ScreenInfo(name: 'LoginPage'),
@@ -59,7 +58,8 @@ void main() {
 
         final text = result.toText();
 
-        expect(text, contains('Navigation Flow'));
+        // toText now always generates the same format
+        expect(text, contains('## Navigation Storyboard'));
         expect(text, contains('LoginPage'));
         expect(text, contains('HomePage'));
         expect(text, isNot(contains('```mermaid')));
@@ -97,24 +97,17 @@ void main() {
 
         final json = result.toJson();
 
-        expect(json['type'], 'storyboard');
-        expect(json['screenCount'], 1);
-        expect(json['edgeCount'], 1);
-        expect(json['routerType'], 'goRouter');
-        expect(json['entryScreen'], 'LoginPage');
-        expect(json['screens'], hasLength(1));
-        expect(json['screens'][0]['name'], 'LoginPage');
-        expect(json['screens'][0]['feature'], 'auth');
-        expect(json['edges'], hasLength(1));
-        expect(json['edges'][0]['from'], 'LoginPage');
-        expect(json['edges'][0]['to'], 'HomePage');
-        expect(json['edges'][0]['routePath'], '/home');
-        expect(json['mermaid'], contains('flowchart TD'));
+        // toJson now returns a DirectedGraph-compatible structure
+        expect(json['nodes'], isA<List>());
+        expect(json['edges'], isA<List>());
+        expect(json['metadata'], isA<Map>());
+        expect((json['nodes'] as List).length, 2); // LoginPage and HomePage
+        expect((json['edges'] as List).length, 1);
       });
     });
 
-    group('mermaid generation', () {
-      test('uses subgraphs when multiple features exist', () {
+    group('DirectedGraph-compatible JSON', () {
+      test('includes nodes and edges when multiple features exist', () {
         const result = StoryboardResult(
           screens: [
             ScreenInfo(name: 'LoginPage', feature: 'auth'),
@@ -129,14 +122,14 @@ void main() {
         );
 
         final json = result.toJson();
-        final mermaid = json['mermaid'] as String;
 
-        expect(mermaid, contains('subgraph'));
-        expect(mermaid, contains('[auth]'));
-        expect(mermaid, contains('[main]'));
+        expect(json['nodes'], isA<List>());
+        expect((json['nodes'] as List).length, 3);
+        expect(json['edges'], isA<List>());
+        expect((json['edges'] as List).length, 2);
       });
 
-      test('includes edge labels when present', () {
+      test('includes edge metadata when present', () {
         const result = StoryboardResult(
           screens: [
             ScreenInfo(name: 'LoginPage'),
@@ -153,12 +146,13 @@ void main() {
         );
 
         final json = result.toJson();
-        final mermaid = json['mermaid'] as String;
-
-        expect(mermaid, contains('on success'));
+        final edges = json['edges'] as List;
+        expect(edges.length, 1);
+        final edge = edges.first as Map<String, dynamic>;
+        expect(edge['label'], 'on success');
       });
 
-      test('sanitizes node IDs', () {
+      test('handles special characters in node names', () {
         const result = StoryboardResult(
           screens: [
             ScreenInfo(name: 'Login-Page'),
@@ -174,11 +168,11 @@ void main() {
         );
 
         final json = result.toJson();
-        final mermaid = json['mermaid'] as String;
+        final nodes = json['nodes'] as List;
 
-        // Dashes and spaces should be converted to underscores
-        expect(mermaid, contains('Login_Page'));
-        expect(mermaid, contains('Home_Page'));
+        // Node names are preserved as-is in the DirectedGraph format
+        expect(nodes, contains('Home Page'));
+        expect(nodes, contains('Login-Page'));
       });
     });
   });
@@ -233,7 +227,7 @@ void main() {
         expect(result.toText(), contains('No symbols found'));
       });
 
-      test('shows markdown table format', () {
+      test('shows symbols grouped by layer', () {
         const result = ClassifyResult(
           classifications: [
             SymbolClassificationInfo(
@@ -249,9 +243,10 @@ void main() {
 
         final text = result.toText();
 
-        expect(text, contains('| Symbol | Feature | File |'));
-        expect(text, contains('|--------|---------|------|'));
-        expect(text, contains('| MyService | core | lib/service.dart |'));
+        expect(text, contains('## Symbol Classification'));
+        expect(text, contains('Service Layer'));
+        expect(text, contains('- MyService [core]'));
+        expect(text, contains('lib/service.dart'));
       });
     });
 

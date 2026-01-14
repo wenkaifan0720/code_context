@@ -1,9 +1,13 @@
 import 'dart:io';
 
 import 'package:code_context/code_context.dart';
+import 'package:dart_binding/dart_binding.dart' show DartBinding;
 import 'package:test/test.dart';
 
 void main() {
+  // Register binding for auto-detection
+  CodeContext.registerBinding(DartBinding());
+
   group('Signature query', () {
     late Directory tempDir;
     late CodeContext context;

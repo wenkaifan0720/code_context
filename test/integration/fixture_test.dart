@@ -140,18 +140,17 @@ void main() {
       expect(screenNames, contains('ProfilePage'));
     });
 
-    test('generates mermaid diagram', () async {
+    test('generates storyboard with nodes and edges', () async {
       final result = await executor.execute('storyboard');
 
       expect(result, isA<StoryboardResult>());
       final storyboardResult = result as StoryboardResult;
 
       final json = storyboardResult.toJson();
-      final mermaid = json['mermaid'] as String;
+      final nodes = json['nodes'] as List;
+      expect(nodes, isNotEmpty);
 
-      expect(mermaid, contains('flowchart TD'));
-
-      print('\n=== Storyboard Mermaid ===');
+      print('\n=== Storyboard ===');
       print(result.toText());
     });
 
@@ -209,16 +208,15 @@ void main() {
       final result = await executor.execute('storyboard');
       final json = result.toJson();
 
-      expect(json['type'], equals('storyboard'));
-      expect(json['screens'], isA<List>());
+      // toJson returns DirectedGraph-compatible format
+      expect(json['nodes'], isA<List>());
       expect(json['edges'], isA<List>());
-      expect(json['mermaid'], isA<String>());
+      expect(json['metadata'], isA<Map>());
 
       print('\n=== Storyboard JSON structure ===');
-      print('type: ${json['type']}');
-      print('screenCount: ${json['screenCount']}');
-      print('edgeCount: ${json['edgeCount']}');
-      print('routerType: ${json['routerType']}');
+      print('nodes: ${json['nodes']}');
+      print('edges count: ${(json['edges'] as List).length}');
+      print('metadata: ${json['metadata']}');
     });
   });
 
@@ -258,8 +256,9 @@ void main() {
 
         // Re-parse to verify it's valid JSON
         final parsed = json.decode(await outputFile.readAsString()) as Map<String, dynamic>;
-        expect(parsed['type'], equals('storyboard'));
-        expect(parsed['screens'], isA<List>());
+        // toJson now returns DirectedGraph-compatible format
+        expect(parsed['nodes'], isA<List>());
+        expect(parsed['edges'], isA<List>());
 
         print('\n=== JSON output test ===');
         print('Valid JSON written and parsed successfully');

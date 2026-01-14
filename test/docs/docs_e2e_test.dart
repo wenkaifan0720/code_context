@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:code_context/code_context.dart';
+import 'package:dart_binding/dart_binding.dart' show DartBinding;
 import 'package:path/path.dart' as p;
 import 'package:scip_server/scip_server.dart';
 import 'package:test/test.dart';
@@ -14,9 +15,12 @@ import 'package:test/test.dart';
 /// 4. Modifies files
 /// 5. Verifies dirty detection works correctly
 void main() {
+  // Register binding for auto-detection
+  CodeContext.registerBinding(DartBinding());
+
   late Directory tempDir;
   late String projectPath;
-  late DartContext context;
+  late CodeContext context;
 
   setUpAll(() async {
     // Create a temp directory
@@ -27,7 +31,7 @@ void main() {
     await _createTestProject(projectPath);
 
     // Index with real SCIP indexer
-    context = await DartContext.open(projectPath, watch: false);
+    context = await CodeContext.open(projectPath, watch: false);
   });
 
   tearDownAll(() async {

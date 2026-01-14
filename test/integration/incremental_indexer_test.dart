@@ -1,10 +1,15 @@
 import 'dart:io';
 
-import 'package:code_context/code_context.dart';
+import 'package:code_context/code_context.dart' hide IndexUpdate;
+import 'package:dart_binding/dart_binding.dart' show DartBinding;
 import 'package:path/path.dart' as p;
+import 'package:scip_server/scip_server.dart' show IndexUpdate;
 import 'package:test/test.dart';
 
 void main() {
+  // Register binding for auto-detection
+  CodeContext.registerBinding(DartBinding());
+
   group('IncrementalScipIndexer', () {
     late Directory tempDir;
     late String projectPath;

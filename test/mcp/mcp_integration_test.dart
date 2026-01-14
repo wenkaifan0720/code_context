@@ -88,7 +88,7 @@ class MyClass {
         final result = await env.callTool('dart_status', {});
 
         // Should return some content (either indexed info or not indexed)
-        expect(result.textContent, contains('Dart Context Status'));
+        expect(result.textContent, contains('Code Context Status'));
       });
 
       test('dart_index_flutter fails for missing packages dir', () async {
@@ -238,7 +238,7 @@ class MyClass {
       test('dart_status includes version', () async {
         final result = await env.callTool('dart_status', {});
 
-        expect(result.textContent, contains('Dart Context Status'));
+        expect(result.textContent, contains('Code Context Status'));
         // Version should be included
         expect(result.textContent, contains('v'));
       });
