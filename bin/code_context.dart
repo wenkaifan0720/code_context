@@ -1165,6 +1165,30 @@ Future<void> _docsGenerate(List<String> args) async {
     final manifestPath = '$projectPath/.dart_context/docs/manifest.json';
     final manifest = await DocManifest.load(manifestPath);
 
+    // Prune folders that no longer exist (deleted from codebase)
+    final existingFolders = graph.folders;
+    final removedFolders = manifest.folders.keys
+        .where((f) => !existingFolders.contains(f))
+        .toList();
+    if (removedFolders.isNotEmpty) {
+      stderr.writeln('Cleaning up ${removedFolders.length} deleted folder(s)...');
+      manifest.pruneRemovedFolders(existingFolders);
+
+      // Delete orphaned doc files
+      final docsRoot = '$projectPath/.dart_context/docs';
+      for (final folder in removedFolders) {
+        final sourceDir = Directory('$docsRoot/source/folders/$folder');
+        final renderedDir = Directory('$docsRoot/rendered/folders/$folder');
+        if (await sourceDir.exists()) {
+          await sourceDir.delete(recursive: true);
+        }
+        if (await renderedDir.exists()) {
+          await renderedDir.delete(recursive: true);
+        }
+      }
+      stderr.writeln('');
+    }
+
     // Create dirty tracker and compute state
     final tracker = DirtyTracker(
       index: index,
