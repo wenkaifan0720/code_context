@@ -227,6 +227,7 @@ void _printUsage(ArgParser parser) {
   stdout.writeln(
       '  kind:<kind>            Filter by kind (class, method, function, etc.)');
   stdout.writeln('  in:<path>              Filter by file path prefix');
+  stdout.writeln('  lang:<language>        Filter by language (dart, etc.)');
   stdout.writeln('');
   stdout.writeln('Grep Flags:');
   stdout.writeln('  -i  Case insensitive     -c  Count per file');

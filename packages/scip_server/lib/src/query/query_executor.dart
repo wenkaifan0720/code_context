@@ -1313,6 +1313,14 @@ class QueryExecutor {
       );
     }
 
+    // Apply language filter
+    final langFilter = query.languageFilter;
+    if (langFilter != null) {
+      results = results.where(
+        (s) => s.language != null && s.language!.toLowerCase() == langFilter.toLowerCase(),
+      );
+    }
+
     return SearchResult(results.toList());
   }
 
