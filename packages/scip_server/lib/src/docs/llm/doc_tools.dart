@@ -150,15 +150,16 @@ Only works for folders that have been documented (bottom-up generation).
   LlmTool get _getPublicApiTool => const LlmTool(
         name: 'get_public_api',
         description: '''
-Get the public API signatures for a folder.
+Get the public API signatures for a FILE (not a folder).
 Returns class, function, and variable declarations without implementation details.
-This is the recommended way to understand what a folder exposes.
+Use this to understand what a specific file exposes without reading all its code.
+For folders, use list_folder first, then call this on interesting files.
 ''',
         parameters: {
           'path': LlmToolParameter(
             type: 'string',
             description:
-                'Relative path to the folder from project root',
+                'Relative path to a .dart FILE from project root (e.g., "lib/src/button.dart")',
           ),
         },
         required: ['path'],
@@ -383,44 +384,52 @@ $content
 
   Future<String> _handleGetPublicApi(Map<String, dynamic> args) async {
     final relativePath = args['path'] as String;
+    
+    // Enforce file-level only to prevent token explosion
+    if (!relativePath.endsWith('.dart')) {
+      return 'Error: get_public_api only works on .dart files, not folders.\n'
+          'Use list_folder to see files, then call get_public_api on specific files.\n'
+          'Example: get_public_api("lib/src/components/button.dart")';
+    }
+    
     final buffer = StringBuffer();
     buffer.writeln('Public API for: $relativePath');
     buffer.writeln('---');
 
-    final symbols = _getSymbolsInPath(relativePath);
-    final publicSymbols = symbols.where((s) => !s.name.startsWith('_'));
+    final symbols = scipIndex.symbolsInFile(relativePath);
+    final publicSymbols = symbols.where((s) => !s.name.startsWith('_')).toList();
 
-    // Group by file
-    final byFile = <String, List<SymbolInfo>>{};
-    for (final sym in publicSymbols) {
-      final file = sym.file ?? 'unknown';
-      byFile.putIfAbsent(file, () => []).add(sym);
+    if (publicSymbols.isEmpty) {
+      buffer.writeln('No public symbols found in this file.');
+      return buffer.toString();
     }
 
-    for (final entry in byFile.entries) {
-      final fileName = p.basename(entry.key);
-      buffer.writeln('## $fileName');
-      buffer.writeln();
+    for (final sym in publicSymbols) {
+      final kind = sym.kindString;
+      final name = sym.name;
+      final def = scipIndex.findDefinition(sym.symbol);
+      final lineInfo = def != null ? ' (line ${def.line + 1})' : '';
       
-      for (final sym in entry.value) {
-        final kind = sym.kindString;
-        final name = sym.name;
-        
-        buffer.writeln('- $kind $name');
-        
-        if (sym.documentation.isNotEmpty) {
-          final doc = sym.documentation.first;
-          if (doc.length < 100) {
-            buffer.writeln('  /// $doc');
-          }
+      buffer.writeln('- $kind $name$lineInfo');
+      
+      // Include doc comment if short
+      if (sym.documentation.isNotEmpty) {
+        final doc = sym.documentation.first;
+        if (doc.length < 150) {
+          buffer.writeln('  /// $doc');
+        } else {
+          buffer.writeln('  /// ${doc.substring(0, 100)}...');
         }
       }
-      buffer.writeln();
+      
+      // Include signature if available
+      if (sym.displayName != null && sym.displayName != name) {
+        buffer.writeln('  signature: ${sym.displayName}');
+      }
     }
 
-    if (byFile.isEmpty) {
-      buffer.writeln('No public API found in this path.');
-    }
+    buffer.writeln();
+    buffer.writeln('Total: ${publicSymbols.length} public symbols');
 
     return buffer.toString();
   }

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import '../context_builder.dart';
-import '../context_formatter.dart';
 import '../llm_interface.dart';
 import 'doc_tools.dart';
 import 'llm_service.dart';
@@ -53,49 +52,6 @@ class DocGenerationAgent implements DocGenerator {
     );
   }
 
-  @override
-  Future<GeneratedDoc> generateModuleDoc(
-    String moduleName,
-    List<FolderDocSummary> folders,
-  ) async {
-    final config = LlmConfig.moduleLevel;
-    final systemPrompt = _buildModuleSystemPrompt();
-    final userPrompt = _buildModuleUserPrompt(moduleName, folders);
-
-    final messages = <LlmMessage>[
-      SystemMessage(systemPrompt),
-      UserMessage(userPrompt),
-    ];
-
-    return _runAgentLoop(
-      messages: messages,
-      config: config,
-      extractDoc: (content) => _extractModuleDoc(content, moduleName, folders),
-    );
-  }
-
-  @override
-  Future<GeneratedDoc> generateProjectDoc(
-    String projectName,
-    List<ModuleDocSummary> modules,
-  ) async {
-    final config = LlmConfig.projectLevel;
-    final systemPrompt = _buildProjectSystemPrompt();
-    final userPrompt = _buildProjectUserPrompt(projectName, modules);
-
-    final messages = <LlmMessage>[
-      SystemMessage(systemPrompt),
-      UserMessage(userPrompt),
-    ];
-
-    return _runAgentLoop(
-      messages: messages,
-      config: config,
-      extractDoc: (content) =>
-          _extractProjectDoc(content, projectName, modules),
-    );
-  }
-
   /// Run the agent loop with tool calling.
   Future<GeneratedDoc> _runAgentLoop({
     required List<LlmMessage> messages,
@@ -131,7 +87,8 @@ class DocGenerationAgent implements DocGenerator {
       final toolResults = <LlmToolResult>[];
       for (final call in response.toolCalls) {
         _log('[Tool Call] ${call.name}(${call.arguments})');
-        final result = await _toolRegistry.executeTool(call.name, call.arguments);
+        final result =
+            await _toolRegistry.executeTool(call.name, call.arguments);
         _log('[Tool Result] ${result.length} chars');
         toolResults.add(LlmToolResult(
           toolCallId: call.id,
@@ -178,134 +135,53 @@ class DocGenerationAgent implements DocGenerator {
   // ===== System Prompts =====
 
   String _buildFolderSystemPrompt() => '''
-You are a technical documentation expert generating docs for a code folder.
+You are writing documentation for a code folder. Write it as you would any good technical documentation - clear, self-contained, and useful for both humans and AI agents trying to understand this code.
 
-Your goal is to create clear, concise documentation that helps developers understand:
-1. What this folder contains and its purpose
-2. Key classes, functions, and their relationships
-3. How this code fits into the larger project
+TOOLS AVAILABLE:
+- `list_folder` - see files and subfolders
+- `get_public_api` - get the public API of a specific .dart file
+- `read_subfolder_doc` - read existing documentation for subfolders (marked [documented] in list_folder)
+- `read_file` - read source code when needed
 
-IMPORTANT GUIDELINES:
-- Use smart symbols with scip:// URIs to link to code definitions
-- Format: [ClassName](scip://path/to/file.dart/ClassName#)
-- **Be concise** - avoid lengthy explanations and excessive code examples
-- Focus on the "why" not just the "what"
-- Include architectural decisions only if they're significant
-- Document public API clearly but briefly
-- For simple data models/utilities: just list properties/methods, no usage examples
-- For complex services/pages: brief overview + key methods, minimal code examples
-- For root/parent folders with subfolders: link to subfolder READMEs for details
-  (e.g., "See [Auth Services](features/auth/services/README.md) for authentication logic")
+For large folders, sample representative files rather than reading everything.
 
-CONCISENESS RULES:
-- Simple folders (models, utils): 10-30 lines total
-- Medium folders (repositories, widgets): 30-60 lines total
-- Complex folders (services, pages): 60-100 lines total
-- Root folders with subfolders: 40-80 lines (overview + subfolder links)
-- Avoid repetitive "This class does X. It does X by..." - state it once
-- No need for full code examples unless the usage is non-obvious
+UNIQUE CAPABILITIES:
+- You can read existing docs from subfolders and synthesize higher-level overviews
+- Link to subfolder docs (include README.md): [components/](components/README.md)
+- Link to code with smart symbols: [ClassName](scip://path/to/file.dart/ClassName#)
 
-You have access to tools to explore the codebase. Use them to gather information
-before generating documentation. The `get_public_api` tool is especially useful
-for understanding interfaces without reading entire files. Use `list_folder` to
-discover subfolders and link to their documentation.
-
-When you have generated enough information, output the documentation as markdown.
-Start with a title (# Folder Name), then include sections for Overview, Key Components,
-and Dependencies as appropriate. Skip Usage examples for simple folders.
-''';
-
-  String _buildModuleSystemPrompt() => '''
-You are a technical documentation expert generating docs for a code module.
-
-A module is a logical grouping of folders that together implement a feature or domain.
-
-Your goal is to create documentation that:
-1. Explains the module's overall purpose and scope
-2. Shows how the component folders work together
-3. Provides architectural overview
-4. Documents key entry points and patterns
-
-Use smart symbols with scip:// URIs to link to specific code.
-Structure the doc with: Overview, Architecture, Components, Usage, and Integration sections.
-''';
-
-  String _buildProjectSystemPrompt() => '''
-You are a technical documentation expert generating project-level documentation.
-
-This is the top-level documentation that gives developers an overview of the entire project.
-
-Your goal is to create documentation that:
-1. Explains the project's purpose and key features
-2. Describes the high-level architecture
-3. Shows how modules relate to each other
-4. Provides guidance for new developers
-
-Structure: Overview, Architecture, Modules, Getting Started, and Contributing sections.
-Use smart symbols to link to specific code when relevant.
+Write the documentation in markdown.
 ''';
 
   // ===== User Prompts =====
 
   String _buildFolderUserPrompt(DocContext context) {
-    final formatter = ContextFormatter();
-    final yaml = formatter.formatAsYaml(context);
+    // Minimal prompt - let the agent explore using tools
+    // Don't pass the full context upfront (can exceed token limits for large folders)
+    final folderPath = context.current.path;
+    final fileCount = context.current.files.length;
+    final internalDeps = context.current.internalDeps.take(5).toList();
 
-    return '''
-Generate documentation for the following folder:
-
-$yaml
-
-Use the available tools to gather any additional information you need.
-When ready, output the final documentation in markdown format.
-''';
-  }
-
-  String _buildModuleUserPrompt(
-    String moduleName,
-    List<FolderDocSummary> folders,
-  ) {
     final buffer = StringBuffer();
-    buffer.writeln('Generate documentation for module: $moduleName');
+    buffer.writeln('Generate documentation for folder: **$folderPath**');
     buffer.writeln();
-    buffer.writeln('Component folders:');
-    for (final folder in folders) {
-      buffer.writeln('## ${folder.path}');
-      if (folder.summary != null) {
-        buffer.writeln('Summary: ${folder.summary}');
-      }
-      buffer.writeln();
-      // Include first ~500 chars of doc
-      final preview = folder.content.length > 500
-          ? '${folder.content.substring(0, 500)}...'
-          : folder.content;
-      buffer.writeln(preview);
-      buffer.writeln();
+    buffer.writeln('Quick stats:');
+    buffer.writeln('- Files in this folder: $fileCount');
+    if (internalDeps.isNotEmpty) {
+      buffer.writeln('- Key dependencies: ${internalDeps.join(", ")}');
     }
-
-    return buffer.toString();
-  }
-
-  String _buildProjectUserPrompt(
-    String projectName,
-    List<ModuleDocSummary> modules,
-  ) {
-    final buffer = StringBuffer();
-    buffer.writeln('Generate project documentation for: $projectName');
     buffer.writeln();
-    buffer.writeln('Modules:');
-    for (final module in modules) {
-      buffer.writeln('## ${module.name}');
-      if (module.summary != null) {
-        buffer.writeln('Summary: ${module.summary}');
-      }
-      buffer.writeln();
-      final preview = module.content.length > 500
-          ? '${module.content.substring(0, 500)}...'
-          : module.content;
-      buffer.writeln(preview);
-      buffer.writeln();
-    }
+    buffer.writeln('Use the available tools to explore this folder:');
+    buffer.writeln('1. `list_folder` - see files and subfolders');
+    buffer.writeln('2. `get_public_api` - get API for a specific .dart file');
+    buffer
+        .writeln('3. `read_subfolder_doc` - read documentation for subfolders');
+    buffer.writeln('4. `read_file` - read source code when needed');
+    buffer.writeln();
+    buffer.writeln(
+        'For large folders with many files, sample representative files to understand patterns.');
+    buffer.writeln(
+        'When ready, output the final documentation in markdown format.');
 
     return buffer.toString();
   }
@@ -328,10 +204,10 @@ When ready, output the final documentation in markdown format.
   String _stripThinking(String content) {
     final lines = content.split('\n');
     final filtered = <String>[];
-    
+
     for (final line in lines) {
       final trimmed = line.trim().toLowerCase();
-      
+
       // Skip thinking lines
       if (trimmed.startsWith('now i ') ||
           trimmed.startsWith('let me ') ||
@@ -343,15 +219,15 @@ When ready, output the final documentation in markdown format.
           trimmed.contains('generate comprehensive')) {
         continue;
       }
-      
+
       filtered.add(line);
     }
-    
+
     // Remove leading empty lines
     while (filtered.isNotEmpty && filtered.first.trim().isEmpty) {
       filtered.removeAt(0);
     }
-    
+
     return filtered.join('\n');
   }
 
@@ -368,46 +244,6 @@ When ready, output the final documentation in markdown format.
       smartSymbols: smartSymbols,
       title: title,
       summary: summary,
-    );
-  }
-
-  GeneratedDoc _extractModuleDoc(
-    String content,
-    String moduleName,
-    List<FolderDocSummary> folders,
-  ) {
-    final cleaned = _stripThinking(content);
-    final smartSymbols = _extractSmartSymbols(cleaned);
-    // Also include symbols from folder docs
-    for (final folder in folders) {
-      smartSymbols.addAll(folder.smartSymbols);
-    }
-
-    return GeneratedDoc(
-      content: cleaned,
-      smartSymbols: smartSymbols.toSet().toList(),
-      title: '$moduleName Module',
-      summary: _extractSummary(cleaned),
-    );
-  }
-
-  GeneratedDoc _extractProjectDoc(
-    String content,
-    String projectName,
-    List<ModuleDocSummary> modules,
-  ) {
-    final cleaned = _stripThinking(content);
-    final smartSymbols = _extractSmartSymbols(cleaned);
-    // Also include symbols from module docs
-    for (final module in modules) {
-      smartSymbols.addAll(module.smartSymbols);
-    }
-
-    return GeneratedDoc(
-      content: cleaned,
-      smartSymbols: smartSymbols.toSet().toList(),
-      title: projectName,
-      summary: _extractSummary(cleaned),
     );
   }
 
