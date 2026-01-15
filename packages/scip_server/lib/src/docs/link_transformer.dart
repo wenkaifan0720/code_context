@@ -71,6 +71,18 @@ class LinkTransformer {
     multiLine: true,
   );
 
+  /// Pattern to match file-level scip:// links (no symbol suffix).
+  ///
+  /// Matches:
+  /// - `[main.dart](scip://lib/main.dart)`
+  /// - `[auth](scip://lib/features/auth/)`
+  ///
+  /// These are links to files or directories, not symbols.
+  static final _fileLinkPattern = RegExp(
+    r'\[([^\]]+)\]\(scip://([^)]+\.dart|[^)]+/)\)',
+    multiLine: true,
+  );
+
   /// Pattern to match doc:// links for subfolder documentation.
   ///
   /// Matches:
@@ -104,11 +116,18 @@ class LinkTransformer {
       if (resolved != null) {
         return '[$label]: $resolved';
       } else {
+        // Check if this is an external package symbol
+        final parsed = ScipUri.parse(scipUri);
+        if (parsed?.package != null) {
+          // External symbol - remove the reference definition entirely
+          // The label will appear as plain text
+          return '<!-- external: $scipUri -->';
+        }
         return '[$label]: #symbol-not-found';
       }
     });
 
-    // Then, transform inline links
+    // Then, transform inline links (symbol-level)
     result = result.replaceAllMapped(_inlineLinkPattern, (match) {
       final label = match.group(1)!;
       final scipUri = match.group(2)!;
@@ -117,8 +136,23 @@ class LinkTransformer {
       if (resolved != null) {
         return '[$label]($resolved)';
       } else {
+        // Check if this is an external package symbol
+        final parsed = ScipUri.parse(scipUri);
+        if (parsed?.package != null) {
+          // External symbol - just use plain text (future: link to pub.dev)
+          return label;
+        }
         return '[$label](#symbol-not-found)';
       }
+    });
+
+    // Transform file-level scip:// links (no symbol, just file path)
+    result = result.replaceAllMapped(_fileLinkPattern, (match) {
+      final label = match.group(1)!;
+      final filePath = match.group(2)!;
+
+      final resolved = _resolveFileLink(filePath, style: style, docPath: docPath);
+      return '[$label]($resolved)';
     });
 
     // Transform doc:// links to relative README.md paths
@@ -172,6 +206,38 @@ class LinkTransformer {
       return './$relativePath/README.md';
     }
     return '$relativePath/README.md';
+  }
+
+  /// Resolve a file-level scip:// link to a relative path.
+  ///
+  /// [filePath] is the file path from scip:// URI (e.g., "lib/main.dart")
+  /// [docPath] is the current doc's path
+  String _resolveFileLink(
+    String filePath, {
+    required LinkStyle style,
+    String? docPath,
+  }) {
+    switch (style) {
+      case LinkStyle.relative:
+        if (docPath != null) {
+          final docAbsPath = p.join(projectRoot ?? index.projectRoot, docPath);
+          final docDir = p.dirname(docAbsPath);
+          final fileAbsPath = p.join(projectRoot ?? index.projectRoot, filePath);
+          final relativePath = p.relative(fileAbsPath, from: docDir);
+          return relativePath;
+        }
+        final fileAbsPath = p.join(projectRoot ?? index.projectRoot, filePath);
+        return p.relative(fileAbsPath, from: docsRoot);
+
+      case LinkStyle.github:
+        if (githubBaseUrl == null) {
+          return _resolveFileLink(filePath, style: LinkStyle.relative, docPath: docPath);
+        }
+        return '$githubBaseUrl/$filePath';
+
+      case LinkStyle.absolute:
+        return 'file://${p.join(projectRoot ?? index.projectRoot, filePath)}';
+    }
   }
 
   /// Pattern to match folder links like [label](path/)

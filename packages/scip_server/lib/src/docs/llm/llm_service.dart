@@ -136,19 +136,29 @@ class LlmConfig {
   final double temperature;
   final int maxTokens;
 
-  /// Model for folder-level docs (cheaper).
+  /// Model for simple/leaf folders (cheapest).
+  /// < 5 files AND < 20 symbols
+  static const leafLevel = LlmConfig(
+    model: 'claude-3-5-haiku-20241022',
+    maxTokens: 2048,
+  );
+
+  /// Model for folder-level docs (mid-tier).
+  /// < 10 files AND < 50 symbols
   static const folderLevel = LlmConfig(
     model: 'claude-sonnet-4-20250514',
     maxTokens: 4096,
   );
 
-  /// Model for module-level docs (mid-tier).
+  /// Model for module-level docs (higher tier).
+  /// >= 10 files OR >= 50 symbols
   static const moduleLevel = LlmConfig(
     model: 'claude-sonnet-4-20250514',
     maxTokens: 8192,
   );
 
   /// Model for project-level docs (premium).
+  /// Root synthesis, complex modules.
   static const projectLevel = LlmConfig(
     model: 'claude-sonnet-4-20250514',
     maxTokens: 16384,

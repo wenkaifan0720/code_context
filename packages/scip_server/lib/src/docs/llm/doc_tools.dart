@@ -3,34 +3,37 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import '../../index/scip_index.dart' show ScipIndex, SymbolInfo;
-import '../doc_manifest.dart';
+import '../../index/scip_index.dart' show ScipIndex;
+import '../../query/query_executor.dart';
 import 'llm_service.dart';
 
 /// Handler function for a doc generation tool.
 typedef DocToolHandler = FutureOr<String> Function(Map<String, dynamic> args);
 
 /// Registry of tools available to the doc generation agent.
+///
+/// Provides general-purpose FS tools (ls, grep, glob, read_file) plus
+/// a powerful `query` tool that exposes the full code_context query DSL.
 class DocToolRegistry {
   DocToolRegistry({
     required this.projectRoot,
     required this.scipIndex,
     required this.docsPath,
-    this.manifest,
+    this.queryExecutor,
   });
 
   final String projectRoot;
   final ScipIndex scipIndex;
   final String docsPath;
-  final DocManifest? manifest;
+  final QueryExecutor? queryExecutor;
 
   /// Get all tool definitions for the LLM.
   List<LlmTool> get tools => [
-        _listFolderTool,
+        _lsTool,
         _readFileTool,
-        _queryScipTool,
-        _readSubfolderDocTool,
-        _getPublicApiTool,
+        _grepTool,
+        _globTool,
+        _queryTool,
       ];
 
   /// Execute a tool by name.
@@ -47,27 +50,27 @@ class DocToolRegistry {
   }
 
   Map<String, DocToolHandler> get _handlers => {
-        'list_folder': _handleListFolder,
+        'ls': _handleLs,
         'read_file': _handleReadFile,
-        'query_scip': _handleQueryScip,
-        'read_subfolder_doc': _handleReadSubfolderDoc,
-        'get_public_api': _handleGetPublicApi,
+        'grep': _handleGrep,
+        'glob': _handleGlob,
+        'query': _handleQuery,
       };
 
   // ===== Tool Definitions =====
 
-  LlmTool get _listFolderTool => const LlmTool(
-        name: 'list_folder',
+  LlmTool get _lsTool => const LlmTool(
+        name: 'ls',
         description: '''
-List the contents of a folder in the project.
-Returns files and subfolders with basic metadata.
-Use this to understand the structure before diving into specific files.
+List files and directories in a given path.
+Subfolders with existing documentation are marked [documented].
+Use this to explore the project structure.
 ''',
         parameters: {
           'path': LlmToolParameter(
             type: 'string',
             description:
-                'Relative path to the folder from project root (e.g., "lib/features/auth")',
+                'Relative path from project root (e.g., "lib/features/auth")',
           ),
         },
         required: ['path'],
@@ -76,9 +79,9 @@ Use this to understand the structure before diving into specific files.
   LlmTool get _readFileTool => const LlmTool(
         name: 'read_file',
         description: '''
-Read the contents of a source file.
+Read the contents of a file, optionally specifying a line range.
 Returns the file content with line numbers for reference.
-Use sparingly - prefer get_public_api for understanding interfaces.
+For large files, use start_line/end_line to read specific sections.
 ''',
         parameters: {
           'path': LlmToolParameter(
@@ -99,81 +102,80 @@ Use sparingly - prefer get_public_api for understanding interfaces.
         required: ['path'],
       );
 
-  LlmTool get _queryScipTool => const LlmTool(
-        name: 'query_scip',
+  LlmTool get _grepTool => const LlmTool(
+        name: 'grep',
         description: '''
-Query the SCIP index for semantic code information.
-Can find definitions, references, type hierarchy, and more.
+Search for a text pattern in files.
+Returns matching lines with file paths and line numbers.
+Useful for finding usages, patterns, or specific code across the project.
 ''',
         parameters: {
-          'query_type': LlmToolParameter(
+          'pattern': LlmToolParameter(
             type: 'string',
-            description: 'Type of query to execute',
-            enumValues: [
-              'definitions', // Find definitions in a path
-              'references', // Find references to a symbol
-              'hierarchy', // Get type hierarchy for a class
-              'relationships', // Get symbol relationships (extends, implements, etc.)
-              'calls', // Find call sites
-            ],
+            description: 'The text pattern to search for',
           ),
           'path': LlmToolParameter(
             type: 'string',
-            description: 'File or folder path to search in',
-          ),
-          'symbol': LlmToolParameter(
-            type: 'string',
             description:
-                'Optional: Symbol name to search for (for references, hierarchy, calls)',
+                'Optional: Directory to search in (defaults to project root)',
           ),
         },
-        required: ['query_type', 'path'],
+        required: ['pattern'],
       );
 
-  LlmTool get _readSubfolderDocTool => const LlmTool(
-        name: 'read_subfolder_doc',
+  LlmTool get _globTool => const LlmTool(
+        name: 'glob',
         description: '''
-Read the already-generated documentation for a subfolder.
-Use this to understand what a subfolder does without reading all its files.
-Only works for folders that have been documented (bottom-up generation).
+Find files matching a glob pattern.
+Returns a list of file paths that match the pattern.
+Examples: "**/*.dart", "lib/features/**/*_page.dart"
 ''',
         parameters: {
-          'path': LlmToolParameter(
+          'pattern': LlmToolParameter(
             type: 'string',
-            description:
-                'Relative path to the subfolder from project root',
+            description: 'Glob pattern to match files (e.g., "**/*.dart")',
           ),
         },
-        required: ['path'],
+        required: ['pattern'],
       );
 
-  LlmTool get _getPublicApiTool => const LlmTool(
-        name: 'get_public_api',
+  LlmTool get _queryTool => const LlmTool(
+        name: 'query',
         description: '''
-Get the public API signatures for a FILE (not a folder).
-Returns class, function, and variable declarations without implementation details.
-Use this to understand what a specific file exposes without reading all its code.
-For folders, use list_folder first, then call this on interesting files.
+Execute a code_context query for semantic code analysis.
+This is a powerful tool that understands code structure, not just text.
+
+Example queries:
+- "symbols get lib/features/auth/" - list all symbols in a folder
+- "symbols refs AuthService.login" - find all references to a method
+- "symbols def UserRepository" - find definition of a symbol
+- "call-graph callers AuthService.login" - who calls this method?
+- "call-graph callees HomePage.build" - what does this method call?
+- "imports lib/features/auth/services/auth_service.dart" - what does this file import?
+- "exports lib/features/auth/" - what does this folder export?
+- "hierarchy User" - get type hierarchy for a class
+- "members AuthService" - get all members of a class
+
+Queries can be piped: "symbols get lib/auth/ | refs" (find refs for all symbols in folder)
 ''',
         parameters: {
-          'path': LlmToolParameter(
+          'q': LlmToolParameter(
             type: 'string',
-            description:
-                'Relative path to a .dart FILE from project root (e.g., "lib/src/button.dart")',
+            description: 'The query string to execute',
           ),
         },
-        required: ['path'],
+        required: ['q'],
       );
 
   // ===== Tool Handlers =====
 
-  Future<String> _handleListFolder(Map<String, dynamic> args) async {
+  Future<String> _handleLs(Map<String, dynamic> args) async {
     final relativePath = args['path'] as String;
     final absolutePath = p.join(projectRoot, relativePath);
     final dir = Directory(absolutePath);
 
     if (!dir.existsSync()) {
-      return 'Error: Folder "$relativePath" does not exist.';
+      return 'Error: Directory "$relativePath" does not exist.';
     }
 
     final buffer = StringBuffer();
@@ -198,11 +200,11 @@ For folders, use list_folder first, then call this on interesting files.
       for (final folder in folders) {
         final name = p.basename(folder.path);
         if (name.startsWith('.')) continue; // Skip hidden
-        
+
         // Check if this subfolder has docs
         final subfolderRelPath = p.join(relativePath, name);
         final hasDoc = _hasDocumentation(subfolderRelPath);
-        buffer.writeln('  📁 $name${hasDoc ? ' [documented]' : ''}');
+        buffer.writeln('  $name/${hasDoc ? ' [documented]' : ''}');
       }
       buffer.writeln();
     }
@@ -213,10 +215,10 @@ For folders, use list_folder first, then call this on interesting files.
       for (final file in files) {
         final name = p.basename(file.path);
         if (name.startsWith('.')) continue; // Skip hidden
-        
+
         final size = file.statSync().size;
         final sizeStr = _formatSize(size);
-        buffer.writeln('  📄 $name ($sizeStr)');
+        buffer.writeln('  $name ($sizeStr)');
       }
     }
 
@@ -258,180 +260,114 @@ For folders, use list_folder first, then call this on interesting files.
     return buffer.toString();
   }
 
-  Future<String> _handleQueryScip(Map<String, dynamic> args) async {
-    final queryType = args['query_type'] as String;
-    final path = args['path'] as String;
-    final symbol = args['symbol'] as String?;
+  Future<String> _handleGrep(Map<String, dynamic> args) async {
+    final pattern = args['pattern'] as String;
+    final searchPath = args['path'] as String? ?? '';
+
+    final absolutePath = p.join(projectRoot, searchPath);
+    final dir = Directory(absolutePath);
+
+    if (!dir.existsSync()) {
+      return 'Error: Directory "$searchPath" does not exist.';
+    }
 
     final buffer = StringBuffer();
-    buffer.writeln('SCIP Query: $queryType');
-    buffer.writeln('Path: $path');
-    if (symbol != null) {
-      buffer.writeln('Symbol: $symbol');
+    buffer.writeln('Searching for: "$pattern"');
+    if (searchPath.isNotEmpty) {
+      buffer.writeln('In: $searchPath');
     }
     buffer.writeln('---');
 
-    switch (queryType) {
-      case 'definitions':
-        final symbols = _getSymbolsInPath(path);
-        for (final sym in symbols) {
-          buffer.writeln('${sym.kindString} ${sym.name}');
-          if (sym.documentation.isNotEmpty) {
-            buffer.writeln('  Doc: ${sym.documentation.first}');
-          }
-        }
+    var matchCount = 0;
+    const maxMatches = 100;
 
-      case 'references':
-        if (symbol == null) {
-          return 'Error: "symbol" parameter required for references query.';
-        }
-        final symbols = _getSymbolsInPath(path);
-        for (final sym in symbols) {
-          if (sym.name.contains(symbol)) {
-            final refs = scipIndex.findReferences(sym.symbol);
-            buffer.writeln('References to ${sym.name}:');
-            for (final ref in refs.take(10)) {
-              buffer.writeln('  - ${ref.file}:${ref.line}');
-            }
-            if (refs.length > 10) {
-              buffer.writeln('  ... and ${refs.length - 10} more');
+    await for (final entity in dir.list(recursive: true)) {
+      if (entity is! File) continue;
+
+      final relativePath = p.relative(entity.path, from: projectRoot);
+
+      // Skip hidden files/folders and non-text files
+      if (relativePath.contains('/.') || relativePath.startsWith('.')) continue;
+      if (!_isTextFile(relativePath)) continue;
+
+      try {
+        final lines = entity.readAsLinesSync();
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].contains(pattern)) {
+            buffer.writeln('$relativePath:${i + 1}: ${lines[i].trim()}');
+            matchCount++;
+            if (matchCount >= maxMatches) {
+              buffer.writeln('... (truncated at $maxMatches matches)');
+              return buffer.toString();
             }
           }
         }
+      } catch (_) {
+        // Skip files that can't be read
+      }
+    }
 
-      case 'hierarchy':
-        if (symbol == null) {
-          return 'Error: "symbol" parameter required for hierarchy query.';
-        }
-        final symbols = _getSymbolsInPath(path);
-        for (final sym in symbols) {
-          if (sym.name.contains(symbol)) {
-            buffer.writeln('Type hierarchy for ${sym.name}:');
-            for (final rel in sym.relationships) {
-              buffer.writeln('  ${rel.symbol}: ${rel.isImplementation ? 'implements' : 'extends'}');
-            }
-          }
-        }
-
-      case 'relationships':
-        final symbols = _getSymbolsInPath(path);
-        for (final sym in symbols) {
-          if (sym.relationships.isNotEmpty) {
-            buffer.writeln('${sym.name}:');
-            for (final rel in sym.relationships) {
-              final relType = rel.isImplementation
-                  ? 'implements'
-                  : rel.isTypeDefinition
-                      ? 'type'
-                      : 'other';
-              buffer.writeln('  $relType: ${rel.symbol.split('/').last}');
-            }
-          }
-        }
-
-      case 'calls':
-        if (symbol == null) {
-          return 'Error: "symbol" parameter required for calls query.';
-        }
-        final symbols = _getSymbolsInPath(path);
-        for (final sym in symbols) {
-          if (sym.name.contains(symbol)) {
-            final refs = scipIndex.findReferences(sym.symbol);
-            buffer.writeln('Call sites for ${sym.name}:');
-            for (final ref in refs.take(10)) {
-              buffer.writeln('  - ${ref.file}:${ref.line}');
-            }
-          }
-        }
-
-      default:
-        return 'Error: Unknown query type "$queryType".';
+    if (matchCount == 0) {
+      buffer.writeln('No matches found.');
+    } else {
+      buffer.writeln();
+      buffer.writeln('Found $matchCount matches.');
     }
 
     return buffer.toString();
   }
 
-  /// Get all symbols in a path (folder or file).
-  Iterable<SymbolInfo> _getSymbolsInPath(String path) {
-    // If path ends with .dart, it's a file
-    if (path.endsWith('.dart')) {
-      return scipIndex.symbolsInFile(path);
-    }
-    // Otherwise, get all symbols in files under this path
-    return scipIndex.allSymbols.where((sym) {
-      final file = sym.file;
-      return file != null && file.startsWith(path);
-    });
-  }
+  Future<String> _handleGlob(Map<String, dynamic> args) async {
+    final pattern = args['pattern'] as String;
 
-  Future<String> _handleReadSubfolderDoc(Map<String, dynamic> args) async {
-    final relativePath = args['path'] as String;
-    final docPath = p.join(docsPath, 'folders', relativePath, 'README.md');
-    final file = File(docPath);
-
-    if (!file.existsSync()) {
-      return 'Error: No documentation found for "$relativePath". '
-          'It may not have been generated yet.';
-    }
-
-    final content = file.readAsStringSync();
-    return '''
-Documentation for: $relativePath
----
-$content
-''';
-  }
-
-  Future<String> _handleGetPublicApi(Map<String, dynamic> args) async {
-    final relativePath = args['path'] as String;
-    
-    // Enforce file-level only to prevent token explosion
-    if (!relativePath.endsWith('.dart')) {
-      return 'Error: get_public_api only works on .dart files, not folders.\n'
-          'Use list_folder to see files, then call get_public_api on specific files.\n'
-          'Example: get_public_api("lib/src/components/button.dart")';
-    }
-    
     final buffer = StringBuffer();
-    buffer.writeln('Public API for: $relativePath');
+    buffer.writeln('Files matching: $pattern');
     buffer.writeln('---');
 
-    final symbols = scipIndex.symbolsInFile(relativePath);
-    final publicSymbols = symbols.where((s) => !s.name.startsWith('_')).toList();
+    final matches = <String>[];
+    final dir = Directory(projectRoot);
 
-    if (publicSymbols.isEmpty) {
-      buffer.writeln('No public symbols found in this file.');
-      return buffer.toString();
-    }
+    await for (final entity in dir.list(recursive: true)) {
+      if (entity is! File) continue;
 
-    for (final sym in publicSymbols) {
-      final kind = sym.kindString;
-      final name = sym.name;
-      final def = scipIndex.findDefinition(sym.symbol);
-      final lineInfo = def != null ? ' (line ${def.line + 1})' : '';
-      
-      buffer.writeln('- $kind $name$lineInfo');
-      
-      // Include doc comment if short
-      if (sym.documentation.isNotEmpty) {
-        final doc = sym.documentation.first;
-        if (doc.length < 150) {
-          buffer.writeln('  /// $doc');
-        } else {
-          buffer.writeln('  /// ${doc.substring(0, 100)}...');
-        }
-      }
-      
-      // Include signature if available
-      if (sym.displayName != null && sym.displayName != name) {
-        buffer.writeln('  signature: ${sym.displayName}');
+      final relativePath = p.relative(entity.path, from: projectRoot);
+
+      // Skip hidden files/folders
+      if (relativePath.contains('/.') || relativePath.startsWith('.')) continue;
+
+      if (_matchesGlob(relativePath, pattern)) {
+        matches.add(relativePath);
       }
     }
 
-    buffer.writeln();
-    buffer.writeln('Total: ${publicSymbols.length} public symbols');
+    if (matches.isEmpty) {
+      buffer.writeln('No files found.');
+    } else {
+      matches.sort();
+      for (final match in matches) {
+        buffer.writeln(match);
+      }
+      buffer.writeln();
+      buffer.writeln('Found ${matches.length} files.');
+    }
 
     return buffer.toString();
+  }
+
+  Future<String> _handleQuery(Map<String, dynamic> args) async {
+    final queryString = args['q'] as String;
+
+    if (queryExecutor == null) {
+      return 'Error: Query executor not available. '
+          'Use other tools (ls, grep, read_file) instead.';
+    }
+
+    try {
+      final result = await queryExecutor!.execute(queryString);
+      return result.toText();
+    } catch (e) {
+      return 'Error executing query: $e';
+    }
   }
 
   // ===== Helpers =====
@@ -445,5 +381,49 @@ $content
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  bool _isTextFile(String path) {
+    final ext = p.extension(path).toLowerCase();
+    const textExtensions = {
+      '.dart',
+      '.md',
+      '.txt',
+      '.json',
+      '.yaml',
+      '.yml',
+      '.xml',
+      '.html',
+      '.css',
+      '.js',
+      '.ts',
+      '.py',
+      '.sh',
+      '.gradle',
+      '.properties',
+    };
+    return textExtensions.contains(ext);
+  }
+
+  bool _matchesGlob(String path, String pattern) {
+    // Simple glob matching - supports * and **
+    var regexPattern = pattern
+        .replaceAll('.', r'\.')
+        .replaceAll('**/', '.*')
+        .replaceAll('**', '.*')
+        .replaceAll('*', r'[^/]*');
+
+    if (!pattern.startsWith('*')) {
+      regexPattern = '^$regexPattern';
+    }
+    if (!pattern.endsWith('*')) {
+      regexPattern = '$regexPattern\$';
+    }
+
+    try {
+      return RegExp(regexPattern).hasMatch(path);
+    } catch (_) {
+      return false;
+    }
   }
 }

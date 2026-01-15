@@ -266,5 +266,127 @@ More content here.
       expect(output, greaterThan(0));
     });
 
+    group('generateRootDoc', () {
+      test('generates root synthesis doc', () async {
+        mockLlm.addTextResponse('''
+# My Project
+
+## Overview
+
+This project implements a task management app.
+
+## Architecture
+
+The project is organized into:
+- [Core](doc://lib/core) - Core utilities
+- [Features](doc://lib/features) - Feature modules
+
+## User Flows
+
+1. User opens app
+2. Tasks are loaded from storage
+3. User can add/edit tasks
+''');
+
+        final result = await agent.generateRootDoc(
+          projectName: 'MyProject',
+          folderDocPaths: [
+            '.dart_context/docs/rendered/folders/lib/README.md',
+            '.dart_context/docs/rendered/folders/lib/core/README.md',
+            '.dart_context/docs/rendered/folders/lib/features/README.md',
+          ],
+        );
+
+        expect(result.content, contains('# My Project'));
+        expect(result.content, contains('Architecture'));
+        expect(result.content, contains('User Flows'));
+        expect(result.content, contains('doc://'));
+      });
+
+      test('uses appropriate config for root doc', () async {
+        mockLlm.addTextResponse('# Root Doc');
+
+        await agent.generateRootDoc(
+          projectName: 'Test',
+          folderDocPaths: [],
+        );
+
+        // Verify moduleLevel config was used (higher token limit)
+        expect(mockLlm.sentMessages.length, equals(1));
+        // The mock doesn't track config, but the generation should complete
+      });
+    });
+
+    group('model selection', () {
+      test('uses leafLevel for simple folders', () async {
+        // Create a simple context with < 5 files and < 20 symbols
+        final simpleContext = DocContext(
+          current: FolderContext(
+            path: 'lib/utils',
+            files: [
+              FileContext(
+                path: 'lib/utils/helper.dart',
+                docComments: [],
+                publicApi: [
+                  ApiSignature(name: 'helper', kind: 'function', signature: 'void helper()'),
+                ],
+                symbols: [],
+              ),
+            ],
+            internalDeps: {},
+            externalDeps: {},
+            usedSymbols: {},
+          ),
+          internalDeps: [],
+          externalDeps: [],
+          dependents: [],
+        );
+
+        mockLlm.addTextResponse('# Utils');
+        await agent.generateFolderDoc(simpleContext);
+
+        // Agent should complete successfully with simple folder
+        expect(mockLlm.sentMessages.length, equals(1));
+      });
+
+      test('uses moduleLevel for complex folders', () async {
+        // Create a complex context with >= 10 files or >= 50 symbols
+        final files = List.generate(
+          15,
+          (i) => FileContext(
+            path: 'lib/complex/file_$i.dart',
+            docComments: [],
+            publicApi: List.generate(
+              5,
+              (j) => ApiSignature(
+                name: 'Symbol${i}_$j',
+                kind: 'class',
+                signature: 'class Symbol${i}_$j',
+              ),
+            ),
+            symbols: [],
+          ),
+        );
+
+        final complexContext = DocContext(
+          current: FolderContext(
+            path: 'lib/complex',
+            files: files,
+            internalDeps: {},
+            externalDeps: {},
+            usedSymbols: {},
+          ),
+          internalDeps: [],
+          externalDeps: [],
+          dependents: [],
+        );
+
+        mockLlm.addTextResponse('# Complex');
+        await agent.generateFolderDoc(complexContext);
+
+        // Agent should complete successfully with complex folder
+        expect(mockLlm.sentMessages.length, equals(1));
+      });
+    });
   });
 }

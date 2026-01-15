@@ -15,6 +15,7 @@ import 'package:scip_server/scip_server.dart' show
     FolderDependencyGraph,
     LinkStyle,
     LinkTransformer,
+    QueryExecutor,
     StructureHash,
     StubDocGenerator,
     // Agentic LLM components
@@ -1301,18 +1302,21 @@ Future<void> _docsGenerate(List<String> args) async {
     var totalInputTokens = 0;
     var totalOutputTokens = 0;
 
+    // Create generator (keep reference for root doc generation)
+    DocGenerationAgent? agenticGenerator;
+    if (useLlm) {
+      agenticGenerator = _createAgenticGenerator(
+        apiKey: apiKey!,
+        index: index,
+        projectRoot: projectPath,
+        docsRoot: docsRoot,
+        verbose: verbose,
+      );
+    }
+
     // STAGE 1: Generate docs for dirty folders only
     if (foldersToGenerate.isNotEmpty) {
-      // Create generator
-      final generator = useLlm
-          ? _createAgenticGenerator(
-              apiKey: apiKey!,
-              index: index,
-              projectRoot: projectPath,
-              docsRoot: docsRoot,
-              verbose: verbose,
-            )
-          : const StubDocGenerator();
+      final generator = agenticGenerator ?? const StubDocGenerator();
 
       for (final level in dirtyState.generationOrder) {
         for (final folder in level) {
@@ -1385,6 +1389,43 @@ Future<void> _docsGenerate(List<String> args) async {
     // Save manifest
     await manifest.save(manifestPath);
 
+    // STAGE 1.5: Generate root synthesis doc (if using LLM)
+    if (useLlm && agenticGenerator != null && generatedCount > 0) {
+      stdout.writeln('');
+      stderr.write('Generating root synthesis doc...');
+
+      // Collect all folder doc paths
+      final folderDocPaths = <String>[];
+      if (await sourceDir.exists()) {
+        await for (final entity in sourceDir.list(recursive: true)) {
+          if (entity is! File) continue;
+          if (!entity.path.endsWith('README.md')) continue;
+          final relativePath =
+              entity.path.substring(projectPath.length + 1);
+          folderDocPaths.add(relativePath);
+        }
+      }
+
+      if (folderDocPaths.isNotEmpty) {
+        final projectName = projectPath.split('/').last;
+        final rootDoc = await agenticGenerator.generateRootDoc(
+          projectName: projectName,
+          folderDocPaths: folderDocPaths,
+        );
+
+        // Save root doc to source
+        final rootSourcePath = '$docsRoot/source/README.md';
+        await File(rootSourcePath).writeAsString(rootDoc.content);
+
+        // Update token counts
+        final (input, output) = agenticGenerator.tokenUsage;
+        totalInputTokens = input;
+        totalOutputTokens = output;
+
+        stderr.writeln(' ✓');
+      }
+    }
+
     // STAGE 2: Re-resolve links for ALL docs (not just newly generated ones)
     // This is cheap and ensures links point to current line numbers
     stdout.writeln('');
@@ -1396,6 +1437,8 @@ Future<void> _docsGenerate(List<String> args) async {
     );
 
     var resolvedCount = 0;
+
+    // Resolve folder docs
     if (await sourceDir.exists()) {
       await for (final entity in sourceDir.list(recursive: true)) {
         if (entity is! File) continue;
@@ -1416,11 +1459,26 @@ Future<void> _docsGenerate(List<String> args) async {
       }
     }
 
+    // Resolve root doc if it exists
+    final rootSourceFile = File('$docsRoot/source/README.md');
+    if (await rootSourceFile.exists()) {
+      final sourceContent = await rootSourceFile.readAsString();
+      final renderedContent = linkTransformer.transform(
+        sourceContent,
+        docPath: '.dart_context/docs/rendered/README.md',
+      );
+
+      final rootRenderedFile = File('$docsRoot/rendered/README.md');
+      await rootRenderedFile.parent.create(recursive: true);
+      await rootRenderedFile.writeAsString(renderedContent);
+      resolvedCount++;
+    }
+
     stdout.writeln('');
     stdout.writeln('Generated $generatedCount folder docs.');
     stdout.writeln('Resolved $resolvedCount docs.');
-    stdout.writeln('Source docs: $docsRoot/source/folders/');
-    stdout.writeln('Rendered docs: $docsRoot/rendered/folders/');
+    stdout.writeln('Source docs: $docsRoot/source/');
+    stdout.writeln('Rendered docs: $docsRoot/rendered/');
     stdout.writeln('Manifest: $manifestPath');
 
     if (useLlm && (totalInputTokens > 0 || totalOutputTokens > 0)) {
@@ -1444,10 +1502,12 @@ DocGenerationAgent _createAgenticGenerator({
   bool verbose = false,
 }) {
   final llmService = AnthropicService(apiKey: apiKey);
+  final queryExecutor = QueryExecutor(index);
   final toolRegistry = DocToolRegistry(
     projectRoot: projectRoot,
     scipIndex: index,
     docsPath: docsRoot,
+    queryExecutor: queryExecutor,
   );
 
   return DocGenerationAgent(

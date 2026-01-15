@@ -204,6 +204,79 @@ No scip links here.
         expect(result, isNull);
       });
     });
+
+    group('file-level links', () {
+      test('transforms scip:// file link to relative path', () {
+        final source = '''
+# Overview
+
+See [main.dart](scip://lib/main.dart) for entry point.
+''';
+
+        final result = transformer.transform(
+          source,
+          docPath: '.dart_context/docs/rendered/folders/lib/README.md',
+        );
+
+        // File link should be resolved to relative path (no #symbol-not-found)
+        expect(result, contains('[main.dart]('));
+        expect(result, isNot(contains('#symbol-not-found')));
+        expect(result, isNot(contains('scip://')));
+      });
+
+      test('transforms scip:// folder link', () {
+        final source = '''
+See [auth](scip://lib/auth/) folder.
+''';
+
+        final result = transformer.transform(
+          source,
+          docPath: '.dart_context/docs/rendered/folders/lib/README.md',
+        );
+
+        expect(result, contains('[auth]('));
+        expect(result, isNot(contains('scip://')));
+      });
+    });
+
+    group('external symbol fallback', () {
+      test('converts external inline link to plain text', () {
+        final source = '''
+Uses [FirebaseAuth](scip://firebase_auth@4.6.0/lib/firebase_auth.dart/FirebaseAuth#) for auth.
+''';
+
+        final result = transformer.transform(source);
+
+        // External symbol should become plain text (label only)
+        expect(result, contains('FirebaseAuth'));
+        expect(result, isNot(contains('#symbol-not-found')));
+      });
+
+      test('converts external reference link to HTML comment', () {
+        final source = '''
+Uses [FirebaseAuth][firebase].
+
+[firebase]: scip://firebase_auth@4.6.0/lib/firebase_auth.dart/FirebaseAuth#
+''';
+
+        final result = transformer.transform(source);
+
+        // Reference definition should become HTML comment
+        expect(result, contains('<!-- external:'));
+        expect(result, isNot(contains('#symbol-not-found')));
+      });
+
+      test('keeps internal unresolved as #symbol-not-found', () {
+        final source = '''
+Uses [UnknownClass](scip://lib/unknown.dart/UnknownClass#).
+''';
+
+        final result = transformer.transform(source);
+
+        // Internal unresolved symbol should still be #symbol-not-found
+        expect(result, contains('#symbol-not-found'));
+      });
+    });
   });
 
   group('LinkStyle', () {

@@ -29,23 +29,25 @@ void main() {
       final tools = registry.tools;
 
       expect(tools.length, equals(5));
-      expect(tools.map((t) => t.name).toSet(), equals({
-        'list_folder',
-        'read_file',
-        'query_scip',
-        'read_subfolder_doc',
-        'get_public_api',
-      }));
+      expect(
+          tools.map((t) => t.name).toSet(),
+          equals({
+            'ls',
+            'read_file',
+            'grep',
+            'glob',
+            'query',
+          }));
     });
 
-    test('list_folder returns folder contents', () async {
+    test('ls returns folder contents', () async {
       // Create test structure
       final libDir = Directory(p.join(tempDir.path, 'lib'));
       await libDir.create();
       await File(p.join(libDir.path, 'main.dart')).writeAsString('// Main');
       await Directory(p.join(libDir.path, 'src')).create();
 
-      final result = await registry.executeTool('list_folder', {
+      final result = await registry.executeTool('ls', {
         'path': 'lib',
       });
 
@@ -54,13 +56,33 @@ void main() {
       expect(result, contains('src'));
     });
 
-    test('list_folder handles non-existent folder', () async {
-      final result = await registry.executeTool('list_folder', {
+    test('ls handles non-existent folder', () async {
+      final result = await registry.executeTool('ls', {
         'path': 'nonexistent',
       });
 
       expect(result, contains('Error'));
       expect(result, contains('does not exist'));
+    });
+
+    test('ls marks documented subfolders', () async {
+      // Create test structure with docs
+      final libDir = Directory(p.join(tempDir.path, 'lib'));
+      await libDir.create();
+      await Directory(p.join(libDir.path, 'auth')).create();
+
+      // Create doc for auth subfolder
+      final docDir = Directory(
+          p.join(tempDir.path, '.dart_context/docs/folders/lib/auth'));
+      await docDir.create(recursive: true);
+      await File(p.join(docDir.path, 'README.md')).writeAsString('# Auth');
+
+      final result = await registry.executeTool('ls', {
+        'path': 'lib',
+      });
+
+      expect(result, contains('auth/'));
+      expect(result, contains('[documented]'));
     });
 
     test('read_file returns file content with line numbers', () async {
@@ -102,60 +124,88 @@ void main() {
       expect(result, contains('does not exist'));
     });
 
-    test('query_scip definitions on empty index', () async {
-      final result = await registry.executeTool('query_scip', {
-        'query_type': 'definitions',
+    test('grep finds pattern in files', () async {
+      // Create test files
+      final libDir = Directory(p.join(tempDir.path, 'lib'));
+      await libDir.create();
+      await File(p.join(libDir.path, 'main.dart'))
+          .writeAsString('void main() {}\nclass MyApp {}');
+      await File(p.join(libDir.path, 'utils.dart'))
+          .writeAsString('class Helper {}\nvoid helper() {}');
+
+      final result = await registry.executeTool('grep', {
+        'pattern': 'class',
+      });
+
+      expect(result, contains('Searching for: "class"'));
+      expect(result, contains('main.dart'));
+      expect(result, contains('MyApp'));
+      expect(result, contains('utils.dart'));
+      expect(result, contains('Helper'));
+    });
+
+    test('grep with path scope', () async {
+      // Create test files
+      final libDir = Directory(p.join(tempDir.path, 'lib'));
+      await libDir.create();
+      await File(p.join(libDir.path, 'main.dart')).writeAsString('class A {}');
+
+      final testDir = Directory(p.join(tempDir.path, 'test'));
+      await testDir.create();
+      await File(p.join(testDir.path, 'test.dart')).writeAsString('class B {}');
+
+      final result = await registry.executeTool('grep', {
+        'pattern': 'class',
         'path': 'lib',
       });
 
-      expect(result, contains('SCIP Query: definitions'));
-      expect(result, contains('Path: lib'));
+      expect(result, contains('class A'));
+      expect(result, isNot(contains('class B')));
     });
 
-    test('query_scip requires symbol for references', () async {
-      final result = await registry.executeTool('query_scip', {
-        'query_type': 'references',
-        'path': 'lib',
+    test('grep handles no matches', () async {
+      final result = await registry.executeTool('grep', {
+        'pattern': 'nonexistent_pattern_xyz',
+      });
+
+      expect(result, contains('No matches found'));
+    });
+
+    test('glob finds matching files', () async {
+      // Create test files
+      final libDir = Directory(p.join(tempDir.path, 'lib'));
+      await libDir.create();
+      await File(p.join(libDir.path, 'main.dart')).writeAsString('');
+      await File(p.join(libDir.path, 'utils.dart')).writeAsString('');
+
+      final srcDir = Directory(p.join(libDir.path, 'src'));
+      await srcDir.create();
+      await File(p.join(srcDir.path, 'widget.dart')).writeAsString('');
+
+      final result = await registry.executeTool('glob', {
+        'pattern': '**/*.dart',
+      });
+
+      expect(result, contains('main.dart'));
+      expect(result, contains('utils.dart'));
+      expect(result, contains('widget.dart'));
+    });
+
+    test('glob handles no matches', () async {
+      final result = await registry.executeTool('glob', {
+        'pattern': '**/*.xyz',
+      });
+
+      expect(result, contains('No files found'));
+    });
+
+    test('query without executor returns error', () async {
+      final result = await registry.executeTool('query', {
+        'q': 'symbols get lib/',
       });
 
       expect(result, contains('Error'));
-      expect(result, contains('symbol'));
-      expect(result, contains('required'));
-    });
-
-    test('read_subfolder_doc when no doc exists', () async {
-      final result = await registry.executeTool('read_subfolder_doc', {
-        'path': 'lib/features/auth',
-      });
-
-      expect(result, contains('Error'));
-      expect(result, contains('No documentation found'));
-    });
-
-    test('read_subfolder_doc when doc exists', () async {
-      final docDir = Directory(p.join(
-        tempDir.path, '.dart_context/docs/folders/lib/features/auth'));
-      await docDir.create(recursive: true);
-      await File(p.join(docDir.path, 'index.md')).writeAsString(
-        '# Auth\n\nAuthentication module.',
-      );
-
-      final result = await registry.executeTool('read_subfolder_doc', {
-        'path': 'lib/features/auth',
-      });
-
-      expect(result, contains('lib/features/auth'));
-      expect(result, contains('# Auth'));
-      expect(result, contains('Authentication module'));
-    });
-
-    test('get_public_api on empty index', () async {
-      final result = await registry.executeTool('get_public_api', {
-        'path': 'lib',
-      });
-
-      expect(result, contains('Public API'));
-      expect(result, contains('No public API found'));
+      expect(result, contains('Query executor not available'));
     });
 
     test('unknown tool returns error', () async {
