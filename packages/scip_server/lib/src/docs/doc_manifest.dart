@@ -175,6 +175,32 @@ class DocManifest {
   void pruneRemovedFolders(Set<String> existingFolders) {
     folders.removeWhere((key, _) => !existingFolders.contains(key));
   }
+
+  /// Get the previous collapse state for all folders.
+  ///
+  /// Returns a map of folder path -> whether it was collapsed.
+  /// Used for hysteresis in collapse decisions.
+  Map<String, bool> getPreviousCollapseState() {
+    final state = <String, bool>{};
+    for (final entry in folders.entries) {
+      state[entry.key] = entry.value.isCollapsed;
+    }
+    return state;
+  }
+
+  /// Get all folders that are currently collapsed children.
+  ///
+  /// These folders should not have their own docs - they're included
+  /// in their parent's collapsed doc.
+  Set<String> getCollapsedChildren() {
+    final children = <String>{};
+    for (final state in folders.values) {
+      if (state.isCollapsed) {
+        children.addAll(state.collapsedSubfolders);
+      }
+    }
+    return children;
+  }
 }
 
 /// State for a folder's documentation.
@@ -186,6 +212,8 @@ class FolderDocState {
     this.internalDeps = const [],
     this.externalDeps = const [],
     this.smartSymbols = const [],
+    this.isCollapsed = false,
+    this.collapsedSubfolders = const [],
   });
 
   /// Hash of the folder's doc-relevant structure (from SCIP).
@@ -206,6 +234,12 @@ class FolderDocState {
   /// Smart symbols referenced in the doc (scip:// URIs).
   final List<String> smartSymbols;
 
+  /// Whether this folder is a collapsed root (includes subfolders in its doc).
+  final bool isCollapsed;
+
+  /// Subfolders included in this collapsed doc (empty if not collapsed).
+  final List<String> collapsedSubfolders;
+
   factory FolderDocState.fromJson(Map<String, dynamic> json) {
     return FolderDocState(
       structureHash: json['structureHash'] as String? ?? '',
@@ -225,6 +259,11 @@ class FolderDocState {
               ?.map((e) => e as String)
               .toList() ??
           [],
+      isCollapsed: json['isCollapsed'] as bool? ?? false,
+      collapsedSubfolders: (json['collapsedSubfolders'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
     );
   }
 
@@ -235,6 +274,9 @@ class FolderDocState {
         'internalDeps': internalDeps,
         'externalDeps': externalDeps,
         'smartSymbols': smartSymbols,
+        if (isCollapsed) 'isCollapsed': isCollapsed,
+        if (collapsedSubfolders.isNotEmpty)
+          'collapsedSubfolders': collapsedSubfolders,
       };
 }
 

@@ -1,6 +1,100 @@
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
 import '../index/scip_index.dart';
+
+/// Configuration for folder collapse behavior.
+class CollapseConfig {
+  const CollapseConfig({
+    this.lineThreshold = 500,
+    this.hysteresisLow = 450,
+    this.hysteresisHigh = 550,
+    this.maxDepth = 3,
+    this.enabled = true,
+  });
+
+  /// Default configuration (no collapsing).
+  static const disabled = CollapseConfig(enabled: false);
+
+  /// Line count threshold for collapsing.
+  final int lineThreshold;
+
+  /// Lower hysteresis bound (collapse when below this).
+  final int hysteresisLow;
+
+  /// Upper hysteresis bound (expand when above this).
+  final int hysteresisHigh;
+
+  /// Maximum depth under lib/ before forcing collapse.
+  final int maxDepth;
+
+  /// Whether collapse is enabled.
+  final bool enabled;
+}
+
+/// Decision about which folders should be collapsed.
+class CollapseDecision {
+  const CollapseDecision({
+    required this.collapsedRoots,
+    required this.childToRoot,
+    required this.expandedFolders,
+    required this.folderLineCounts,
+  });
+
+  /// Create an empty decision (no collapsing).
+  const CollapseDecision.none()
+      : collapsedRoots = const {},
+        childToRoot = const {},
+        expandedFolders = const {},
+        folderLineCounts = const {};
+
+  /// Folders that are collapse roots (generate a single doc for subtree).
+  final Set<String> collapsedRoots;
+
+  /// Maps collapsed children to their root folder.
+  /// Children should NOT have their own docs generated.
+  final Map<String, String> childToRoot;
+
+  /// Folders that get individual docs (not collapsed).
+  final Set<String> expandedFolders;
+
+  /// Line counts for each folder subtree.
+  final Map<String, int> folderLineCounts;
+
+  /// Check if a folder is a collapsed root.
+  bool isCollapsedRoot(String folder) => collapsedRoots.contains(folder);
+
+  /// Check if a folder is a collapsed child (should not get its own doc).
+  bool isCollapsedChild(String folder) => childToRoot.containsKey(folder);
+
+  /// Get the collapse root for a folder, or null if not collapsed.
+  String? getCollapseRoot(String folder) {
+    if (collapsedRoots.contains(folder)) return folder;
+    return childToRoot[folder];
+  }
+
+  /// Get all folders that should have docs generated.
+  Set<String> get foldersToGenerate => {...collapsedRoots, ...expandedFolders};
+
+  /// Get all subfolders included in a collapsed root.
+  List<String> getCollapsedSubfolders(String root) {
+    if (!collapsedRoots.contains(root)) return [];
+    return childToRoot.entries
+        .where((e) => e.value == root)
+        .map((e) => e.key)
+        .toList()
+      ..sort();
+  }
+
+  @override
+  String toString() {
+    return 'CollapseDecision('
+        'roots: ${collapsedRoots.length}, '
+        'children: ${childToRoot.length}, '
+        'expanded: ${expandedFolders.length})';
+  }
+}
 
 /// A folder-level dependency graph built from SCIP index.
 ///
@@ -17,9 +111,11 @@ class FolderDependencyGraph {
     required Map<String, Set<String>> internalDeps,
     required Map<String, Set<String>> externalDeps,
     required Map<String, Set<String>> dependents,
+    Set<String>? files,
   })  : _internalDeps = internalDeps,
         _externalDeps = externalDeps,
-        _dependents = dependents;
+        _dependents = dependents,
+        _filesInFolders = files ?? {};
 
   /// Create a graph for testing purposes.
   ///
@@ -29,6 +125,7 @@ class FolderDependencyGraph {
     required Map<String, Set<String>> internalDeps,
     Map<String, Set<String>>? externalDeps,
     Map<String, Set<String>>? dependents,
+    Set<String>? files,
   }) {
     // Auto-compute dependents if not provided
     final computedDependents = dependents ?? <String, Set<String>>{};
@@ -48,6 +145,7 @@ class FolderDependencyGraph {
       internalDeps: internalDeps,
       externalDeps: externalDeps ?? {},
       dependents: computedDependents,
+      files: files,
     );
   }
 
@@ -62,6 +160,9 @@ class FolderDependencyGraph {
 
   /// folder -> folders that import from it
   final Map<String, Set<String>> _dependents;
+
+  /// All files indexed (used for line counting).
+  final Set<String> _filesInFolders;
 
   /// Build a folder dependency graph from a SCIP index.
   ///
@@ -123,6 +224,7 @@ class FolderDependencyGraph {
       internalDeps: internalDeps,
       externalDeps: externalDeps,
       dependents: dependents,
+      files: index.files.toSet(),
     );
   }
 
@@ -219,6 +321,241 @@ class FolderDependencyGraph {
             .toSet()
             .length,
       };
+
+  /// Compute which folders should be collapsed based on criteria.
+  ///
+  /// Collapse criteria:
+  /// 1. Line count: Folders with subtree < lineThreshold are collapsed
+  /// 2. Depth: Folders more than maxDepth levels under lib/ are collapsed
+  ///
+  /// Uses hysteresis to prevent oscillation at boundaries.
+  Future<CollapseDecision> computeCollapseDecision({
+    required CollapseConfig config,
+    required String projectRoot,
+    Map<String, bool>? previousCollapseState,
+  }) async {
+    if (!config.enabled) {
+      return CollapseDecision(
+        collapsedRoots: {},
+        childToRoot: {},
+        expandedFolders: folders,
+        folderLineCounts: {},
+      );
+    }
+
+    // Step 1: Compute line counts for each folder subtree
+    final folderLineCounts = await _computeFolderLineCounts(projectRoot);
+
+    // Step 2: Build parent-child relationships
+    final children = _computeChildRelationships();
+
+    // Step 3: Determine collapse state for each folder
+    final collapsedRoots = <String>{};
+    final childToRoot = <String, String>{};
+    final expandedFolders = <String>{};
+
+    // Process folders from deepest to shallowest
+    final sortedFolders = folders.toList()
+      ..sort((a, b) => b.split('/').length.compareTo(a.split('/').length));
+
+    for (final folder in sortedFolders) {
+      // Skip if already marked as a child of a collapsed root
+      if (childToRoot.containsKey(folder)) continue;
+
+      final shouldCollapse = _shouldCollapse(
+        folder: folder,
+        config: config,
+        folderLineCounts: folderLineCounts,
+        previousCollapseState: previousCollapseState,
+      );
+
+      if (shouldCollapse) {
+        // This folder becomes a collapsed root
+        collapsedRoots.add(folder);
+
+        // Mark all descendants as children of this root
+        _markDescendantsAsChildren(
+          folder,
+          folder,
+          children,
+          childToRoot,
+          collapsedRoots,
+        );
+      } else {
+        expandedFolders.add(folder);
+      }
+    }
+
+    return CollapseDecision(
+      collapsedRoots: collapsedRoots,
+      childToRoot: childToRoot,
+      expandedFolders: expandedFolders,
+      folderLineCounts: folderLineCounts,
+    );
+  }
+
+  /// Compute line counts for each folder and its subtree.
+  Future<Map<String, int>> _computeFolderLineCounts(String projectRoot) async {
+    final lineCounts = <String, int>{};
+
+    for (final folder in folders) {
+      var totalLines = 0;
+
+      // Count lines in files directly in this folder
+      for (final file in _getFilesInFolder(folder)) {
+        final filePath = p.join(projectRoot, file);
+        try {
+          final content = await File(filePath).readAsString();
+          totalLines += content.split('\n').length;
+        } catch (_) {
+          // File might not exist or be unreadable
+        }
+      }
+
+      lineCounts[folder] = totalLines;
+    }
+
+    // Add subtree line counts
+    final subtreeCounts = <String, int>{};
+    for (final folder in folders) {
+      subtreeCounts[folder] = _computeSubtreeLineCount(folder, lineCounts);
+    }
+
+    return subtreeCounts;
+  }
+
+  /// Get files directly in a folder (not subfolders).
+  List<String> _getFilesInFolder(String folder) {
+    final result = <String>[];
+    for (final file in _allFiles) {
+      if (_isFileInFolder(file, folder)) {
+        result.add(file);
+      }
+    }
+    return result;
+  }
+
+  /// Helper to get all indexed files.
+  Set<String> get _allFiles => _filesInFolders;
+
+  static bool _isFileInFolder(String filePath, String folderPath) {
+    if (!filePath.startsWith(folderPath)) return false;
+
+    final remainder = filePath.substring(folderPath.length);
+    if (!remainder.startsWith('/')) return false;
+
+    final afterSlash = remainder.substring(1);
+    return !afterSlash.contains('/');
+  }
+
+  /// Compute subtree line count (folder + all descendants).
+  int _computeSubtreeLineCount(String folder, Map<String, int> lineCounts) {
+    var total = lineCounts[folder] ?? 0;
+
+    for (final otherFolder in folders) {
+      if (otherFolder != folder && otherFolder.startsWith('$folder/')) {
+        total += lineCounts[otherFolder] ?? 0;
+      }
+    }
+
+    return total;
+  }
+
+  /// Build parent -> children mapping.
+  Map<String, Set<String>> _computeChildRelationships() {
+    final children = <String, Set<String>>{};
+    for (final folder in folders) {
+      children[folder] = {};
+    }
+
+    for (final folder in folders) {
+      // Find immediate parent
+      final parent = _findImmediateParent(folder);
+      if (parent != null && folders.contains(parent)) {
+        children[parent]!.add(folder);
+      }
+    }
+
+    return children;
+  }
+
+  /// Find the immediate parent folder.
+  String? _findImmediateParent(String folder) {
+    final parts = folder.split('/');
+    if (parts.length <= 1) return null;
+
+    // Try successively shorter paths to find a folder that exists
+    for (var i = parts.length - 1; i > 0; i--) {
+      final parentPath = parts.sublist(0, i).join('/');
+      if (folders.contains(parentPath)) {
+        return parentPath;
+      }
+    }
+
+    return null;
+  }
+
+  /// Determine if a folder should be collapsed.
+  bool _shouldCollapse({
+    required String folder,
+    required CollapseConfig config,
+    required Map<String, int> folderLineCounts,
+    Map<String, bool>? previousCollapseState,
+  }) {
+    // Check depth limit (folders under lib/)
+    if (_exceedsDepthLimit(folder, config.maxDepth)) {
+      return true;
+    }
+
+    // Check line count with hysteresis
+    final lineCount = folderLineCounts[folder] ?? 0;
+    final wasCollapsed = previousCollapseState?[folder] ?? false;
+
+    if (wasCollapsed) {
+      // Currently collapsed - only expand if above high threshold
+      return lineCount < config.hysteresisHigh;
+    } else {
+      // Currently expanded - only collapse if below low threshold
+      return lineCount < config.hysteresisLow;
+    }
+  }
+
+  /// Check if folder exceeds the depth limit under lib/.
+  bool _exceedsDepthLimit(String folder, int maxDepth) {
+    // Find lib/ in the path
+    final parts = folder.split('/');
+    final libIndex = parts.indexOf('lib');
+
+    if (libIndex < 0) return false;
+
+    // Count depth after lib/
+    final depthAfterLib = parts.length - libIndex - 1;
+    return depthAfterLib > maxDepth;
+  }
+
+  /// Mark all descendants of a folder as children of a collapse root.
+  void _markDescendantsAsChildren(
+    String folder,
+    String root,
+    Map<String, Set<String>> children,
+    Map<String, String> childToRoot,
+    Set<String> collapsedRoots,
+  ) {
+    for (final child in children[folder] ?? <String>{}) {
+      // Don't mark if already a collapsed root itself
+      if (!collapsedRoots.contains(child)) {
+        childToRoot[child] = root;
+        // Recursively mark children's children
+        _markDescendantsAsChildren(
+          child,
+          root,
+          children,
+          childToRoot,
+          collapsedRoots,
+        );
+      }
+    }
+  }
 
   @override
   String toString() {

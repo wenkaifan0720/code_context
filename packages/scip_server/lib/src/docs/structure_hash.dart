@@ -107,6 +107,56 @@ class StructureHash {
     return computeHash(parts);
   }
 
+  /// Compute structure hash for a collapsed folder (including all subfolders).
+  ///
+  /// This hashes ALL symbols in the subtree, not just the immediate folder.
+  /// The [collapsedSubfolders] should include all subfolders that are collapsed
+  /// into this root folder.
+  static String computeCollapsedFolderHash(
+    ScipIndex index,
+    String folderPath,
+    List<String> collapsedSubfolders,
+  ) {
+    // Normalize folder path
+    final normalizedFolder = folderPath.endsWith('/')
+        ? folderPath.substring(0, folderPath.length - 1)
+        : folderPath;
+
+    // Collect all folders to include
+    final allFolders = <String>{normalizedFolder, ...collapsedSubfolders};
+
+    // Get all symbols from all folders in the subtree
+    final allSymbols = <SymbolInfo>[];
+    for (final file in index.files) {
+      // Check if this file is in any of the collapsed folders
+      for (final folder in allFolders) {
+        if (_isFileInFolderOrSubfolder(file, folder)) {
+          allSymbols.addAll(index.symbolsInFile(file));
+          break;
+        }
+      }
+    }
+
+    final parts = extractDocRelevantParts(allSymbols);
+    
+    // Also include the list of subfolders in the hash
+    // This ensures changes to folder structure trigger regeneration
+    for (final subfolder in collapsedSubfolders) {
+      parts.add('subfolder:$subfolder');
+    }
+    
+    return computeHash(parts);
+  }
+
+  /// Check if a file is in a folder or any of its subfolders.
+  static bool _isFileInFolderOrSubfolder(String filePath, String folderPath) {
+    if (!filePath.startsWith(folderPath)) return false;
+    
+    final remainder = filePath.substring(folderPath.length);
+    // File is in folder or subfolder if it starts with /
+    return remainder.startsWith('/');
+  }
+
   /// Check if a file is directly within a folder (not in subfolders).
   static bool _isFileInFolder(String filePath, String folderPath) {
     if (!filePath.startsWith(folderPath)) return false;

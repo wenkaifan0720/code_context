@@ -164,6 +164,52 @@ class ContextExtractor {
         .toList()
       ..sort();
 
+    return _extractFolderFromFiles(normalizedFolder, filesInFolder);
+  }
+
+  /// Extract context for a collapsed folder (includes all subfolders).
+  ///
+  /// The [folderPath] is the collapse root, and [collapsedSubfolders] are
+  /// all subfolders included in this collapsed doc.
+  FolderContext extractCollapsedFolder(
+    String folderPath,
+    List<String> collapsedSubfolders,
+  ) {
+    // Normalize folder path
+    final normalizedFolder = folderPath.endsWith('/')
+        ? folderPath.substring(0, folderPath.length - 1)
+        : folderPath;
+
+    // Collect all folders to include
+    final allFolders = <String>{normalizedFolder, ...collapsedSubfolders};
+
+    // Find all files in the folder and its subfolders
+    final filesInFolder = <String>[];
+    for (final file in index.files) {
+      for (final folder in allFolders) {
+        if (_isFileInFolder(file, folder)) {
+          filesInFolder.add(file);
+          break;
+        }
+      }
+    }
+    filesInFolder.sort();
+
+    // Use special dependency tracking for collapsed folders
+    // Internal deps should not include collapsed subfolders
+    return _extractFolderFromFiles(
+      normalizedFolder,
+      filesInFolder,
+      excludeInternalDeps: allFolders,
+    );
+  }
+
+  /// Common extraction logic for folder and collapsed folder.
+  FolderContext _extractFolderFromFiles(
+    String folderPath,
+    List<String> filesInFolder, {
+    Set<String>? excludeInternalDeps,
+  }) {
     // Extract context for each file
     final fileContexts = <FileContext>[];
     for (final filePath in filesInFolder) {
@@ -186,10 +232,11 @@ class ContextExtractor {
         for (final calledSymbol in calls) {
           _trackDependency(
             calledSymbol,
-            normalizedFolder,
+            folderPath,
             internalDeps,
             externalDeps,
             usedSymbols,
+            excludeInternalDeps: excludeInternalDeps,
           );
         }
 
@@ -199,10 +246,11 @@ class ContextExtractor {
           if (relSymbol != null) {
             _trackDependency(
               relSymbol,
-              normalizedFolder,
+              folderPath,
               internalDeps,
               externalDeps,
               usedSymbols,
+              excludeInternalDeps: excludeInternalDeps,
             );
           }
         }
@@ -216,7 +264,7 @@ class ContextExtractor {
     }
 
     return FolderContext(
-      path: normalizedFolder,
+      path: folderPath,
       files: fileContexts,
       internalDeps: internalDeps,
       externalDeps: externalDeps,
@@ -366,8 +414,9 @@ class ContextExtractor {
     String currentFolder,
     Set<String> internalDeps,
     Set<String> externalDeps,
-    Map<String, Set<String>> usedSymbols,
-  ) {
+    Map<String, Set<String>> usedSymbols, {
+    Set<String>? excludeInternalDeps,
+  }) {
     // Skip local/anonymous symbols - they're implementation details
     if (_isLocalOrAnonymous(calledSymbol.symbol)) return;
 
@@ -388,6 +437,11 @@ class ContextExtractor {
       // Internal dependency
       final targetFolder = p.dirname(calledSymbol.file!);
       if (targetFolder != currentFolder) {
+        // Skip if this folder is in the excluded list (e.g., collapsed subfolders)
+        if (excludeInternalDeps != null &&
+            excludeInternalDeps.contains(targetFolder)) {
+          return;
+        }
         internalDeps.add(targetFolder);
         usedSymbols
             .putIfAbsent(targetFolder, () => {})

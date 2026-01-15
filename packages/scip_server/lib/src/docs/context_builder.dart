@@ -178,6 +178,64 @@ class ContextBuilder {
     );
   }
 
+  /// Build complete context for a collapsed folder (includes subfolders).
+  ///
+  /// The [folder] is the collapse root and [collapsedSubfolders] are all
+  /// subfolders included in this collapsed doc.
+  Future<DocContext> buildForCollapsedFolder(
+    String folder,
+    List<String> collapsedSubfolders,
+  ) async {
+    // Extract context for the collapsed folder (includes all subfolders)
+    final current = _extractor.extractCollapsedFolder(folder, collapsedSubfolders);
+
+    // Build internal dependency summaries
+    // Note: dependencies already exclude collapsed subfolders
+    final internalDeps = <FolderSummary>[];
+    for (final depFolder in current.internalDeps) {
+      final summary = await _buildFolderSummary(
+        depFolder,
+        current.usedSymbols[depFolder] ?? [],
+      );
+      internalDeps.add(summary);
+    }
+
+    // Build external package summaries
+    final externalDeps = <PackageSummary>[];
+    for (final pkg in current.externalDeps) {
+      final summary = _buildPackageSummary(
+        pkg,
+        current.usedSymbols[pkg] ?? [],
+      );
+      externalDeps.add(summary);
+    }
+
+    // Build dependent usage info
+    // Include dependents of the root AND all subfolders
+    final allFolders = <String>{folder, ...collapsedSubfolders};
+    final allDependents = <String>{};
+    for (final f in allFolders) {
+      allDependents.addAll(graph.getDependents(f));
+    }
+    // Remove self-references (collapsed subfolders depending on each other)
+    allDependents.removeAll(allFolders);
+
+    final dependents = <DependentUsage>[];
+    for (final depFolder in allDependents) {
+      final usage = await _buildDependentUsage(depFolder, folder);
+      if (usage != null) {
+        dependents.add(usage);
+      }
+    }
+
+    return DocContext(
+      current: current,
+      internalDeps: internalDeps,
+      externalDeps: externalDeps,
+      dependents: dependents,
+    );
+  }
+
   /// Build summary for an internal folder dependency.
   Future<FolderSummary> _buildFolderSummary(
     String folder,

@@ -16,9 +16,12 @@ class DirtyState {
     required this.projectDirty,
     required this.generationOrder,
     required this.structureHashes,
+    this.collapseDecision,
   });
 
   /// Folders that need regeneration.
+  /// Only includes folders that should have docs generated
+  /// (collapsed roots and expanded folders, NOT collapsed children).
   final Set<String> dirtyFolders;
 
   /// Modules that need regeneration.
@@ -33,6 +36,9 @@ class DirtyState {
   /// Current structure hashes for all folders.
   final Map<String, String> structureHashes;
 
+  /// Collapse decision used for this dirty state computation.
+  final CollapseDecision? collapseDecision;
+
   /// Check if anything is dirty.
   bool get isDirty =>
       dirtyFolders.isNotEmpty || dirtyModules.isNotEmpty || projectDirty;
@@ -44,6 +50,10 @@ class DirtyState {
         'projectDirty': projectDirty,
         'totalFolders': structureHashes.length,
         'generationLevels': generationOrder.length,
+        if (collapseDecision != null) ...{
+          'collapsedRoots': collapseDecision!.collapsedRoots.length,
+          'collapsedChildren': collapseDecision!.childToRoot.length,
+        },
       };
 }
 
@@ -54,6 +64,7 @@ class DirtyState {
 /// - Compare against manifest to find dirty folders
 /// - Propagate dirty state upward (folder → module → project)
 /// - Determine generation order via topological sort
+/// - Handle collapsed folders (include subtree in hash)
 class DirtyTracker {
   const DirtyTracker({
     required this.index,
@@ -70,21 +81,60 @@ class DirtyTracker {
   /// If empty, modules are auto-detected from folder structure.
   final Map<String, List<String>> moduleDefinitions;
 
-  /// Compute the current dirty state.
+  /// Compute the current dirty state without collapse awareness.
+  /// For backward compatibility.
   DirtyState computeDirtyState() {
+    return computeDirtyStateWithCollapse(const CollapseDecision.none());
+  }
+
+  /// Compute the current dirty state with collapse awareness.
+  ///
+  /// The [collapseDecision] determines which folders are collapsed roots
+  /// and which are collapsed children (no individual docs).
+  DirtyState computeDirtyStateWithCollapse(CollapseDecision collapseDecision) {
     // Compute structure hashes for all folders
     final structureHashes = <String, String>{};
-    for (final folder in graph.folders) {
+
+    // For collapsed roots, hash the entire subtree
+    for (final folder in collapseDecision.collapsedRoots) {
+      final subfolders = collapseDecision.getCollapsedSubfolders(folder);
+      structureHashes[folder] = StructureHash.computeCollapsedFolderHash(
+        index,
+        folder,
+        subfolders,
+      );
+    }
+
+    // For expanded folders, hash just the folder
+    for (final folder in collapseDecision.expandedFolders) {
       structureHashes[folder] = StructureHash.computeFolderHash(index, folder);
     }
 
-    // Find directly dirty folders (structure changed)
-    final dirtyFolders = <String>{};
-    for (final entry in structureHashes.entries) {
-      if (manifest.isFolderDirty(entry.key, entry.value)) {
-        dirtyFolders.add(entry.key);
+    // If no collapse decision (backward compat), hash all folders normally
+    if (collapseDecision.collapsedRoots.isEmpty &&
+        collapseDecision.expandedFolders.isEmpty) {
+      for (final folder in graph.folders) {
+        structureHashes[folder] =
+            StructureHash.computeFolderHash(index, folder);
       }
     }
+
+    // Find directly dirty folders (structure changed)
+    // Only consider folders that should have docs (not collapsed children)
+    final dirtyFolders = <String>{};
+    final foldersToCheck = collapseDecision.foldersToGenerate.isNotEmpty
+        ? collapseDecision.foldersToGenerate
+        : graph.folders;
+
+    for (final folder in foldersToCheck) {
+      final hash = structureHashes[folder];
+      if (hash != null && manifest.isFolderDirty(folder, hash)) {
+        dirtyFolders.add(folder);
+      }
+    }
+
+    // Also check for collapse state transitions
+    _detectCollapseTransitions(collapseDecision, dirtyFolders);
 
     // Propagate dirty via smart symbol references
     _propagateViaSmartSymbols(dirtyFolders, structureHashes);
@@ -107,11 +157,11 @@ class DirtyTracker {
     }
 
     // Project is dirty if any module is dirty
-    final projectDirty =
-        dirtyModules.isNotEmpty || manifest.isProjectDirty(modules.keys.toList());
+    final projectDirty = dirtyModules.isNotEmpty ||
+        manifest.isProjectDirty(modules.keys.toList());
 
-    // Compute generation order
-    final generationOrder = TopologicalSort.sort(graph);
+    // Compute generation order (only for folders that get docs)
+    final generationOrder = _computeGenerationOrder(collapseDecision);
 
     return DirtyState(
       dirtyFolders: dirtyFolders,
@@ -119,7 +169,58 @@ class DirtyTracker {
       projectDirty: projectDirty,
       generationOrder: generationOrder,
       structureHashes: structureHashes,
+      collapseDecision: collapseDecision,
     );
+  }
+
+  /// Detect folders that changed collapse state and mark them dirty.
+  void _detectCollapseTransitions(
+    CollapseDecision collapseDecision,
+    Set<String> dirtyFolders,
+  ) {
+    // Check for folders that were collapsed but are now expanded
+    for (final entry in manifest.folders.entries) {
+      final folder = entry.key;
+      final state = entry.value;
+
+      if (state.isCollapsed && !collapseDecision.isCollapsedRoot(folder)) {
+        // Was collapsed, now expanded - mark as dirty
+        dirtyFolders.add(folder);
+      }
+    }
+
+    // Check for folders that were expanded but are now collapsed
+    for (final root in collapseDecision.collapsedRoots) {
+      final state = manifest.folders[root];
+      if (state != null && !state.isCollapsed) {
+        // Was expanded, now collapsed - mark as dirty
+        dirtyFolders.add(root);
+      }
+    }
+  }
+
+  /// Compute generation order for folders that should have docs.
+  List<List<String>> _computeGenerationOrder(CollapseDecision collapseDecision) {
+    // Get the full topological order
+    final fullOrder = TopologicalSort.sort(graph);
+
+    // Filter to only include folders that should have docs
+    final foldersToGenerate = collapseDecision.foldersToGenerate;
+    if (foldersToGenerate.isEmpty) {
+      // No collapse decision - return full order
+      return fullOrder;
+    }
+
+    final filteredOrder = <List<String>>[];
+    for (final level in fullOrder) {
+      final filteredLevel =
+          level.where((f) => foldersToGenerate.contains(f)).toList();
+      if (filteredLevel.isNotEmpty) {
+        filteredOrder.add(filteredLevel);
+      }
+    }
+
+    return filteredOrder;
   }
 
   /// Propagate dirty state via smart symbol references.
@@ -234,6 +335,8 @@ class DirtyTracker {
     required List<String> internalDeps,
     required List<String> externalDeps,
     required List<String> smartSymbols,
+    bool isCollapsed = false,
+    List<String> collapsedSubfolders = const [],
   }) {
     return FolderDocState(
       structureHash: structureHash,
@@ -242,6 +345,8 @@ class DirtyTracker {
       internalDeps: internalDeps,
       externalDeps: externalDeps,
       smartSymbols: smartSymbols,
+      isCollapsed: isCollapsed,
+      collapsedSubfolders: collapsedSubfolders,
     );
   }
 

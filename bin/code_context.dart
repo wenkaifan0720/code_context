@@ -6,6 +6,8 @@ import 'package:args/args.dart';
 import 'package:code_context/code_context.dart' hide FileUpdatedUpdate, FileRemovedUpdate, IndexErrorUpdate;
 import 'package:dart_binding/dart_binding.dart' show DartLanguageContext;
 import 'package:scip_server/scip_server.dart' show
+    CollapseConfig,
+    CollapseDecision,
     ContextBuilder,
     ContextFormatter,
     DirtyTracker,
@@ -1105,6 +1107,21 @@ Future<void> _docsGenerate(List<String> args) async {
       help: 'Show verbose logging (LLM tool calls)',
       defaultsTo: false,
     )
+    ..addOption(
+      'collapse-threshold',
+      help: 'Line count below which to collapse folders (default: 500)',
+      defaultsTo: '500',
+    )
+    ..addOption(
+      'max-depth',
+      help: 'Max folder depth under lib/ before collapsing (default: 3)',
+      defaultsTo: '3',
+    )
+    ..addFlag(
+      'no-collapse',
+      help: 'Disable folder collapsing',
+      defaultsTo: false,
+    )
     ..addFlag('help', abbr: 'h', help: 'Show help', negatable: false);
 
   final parsed = parser.parse(args);
@@ -1118,11 +1135,17 @@ Future<void> _docsGenerate(List<String> args) async {
     stdout.writeln('');
     stdout.writeln('By default uses a stub generator. Use --llm for real AI generation.');
     stdout.writeln('');
+    stdout.writeln('Folder Collapsing:');
+    stdout.writeln('  Small folders (under --collapse-threshold lines) or deeply nested');
+    stdout.writeln('  folders (over --max-depth levels under lib/) are collapsed into a');
+    stdout.writeln('  single comprehensive doc rather than individual docs per subfolder.');
+    stdout.writeln('');
     stdout.writeln('Examples:');
     stdout.writeln('  code_context docs generate');
     stdout.writeln('  code_context docs generate --llm');
     stdout.writeln('  code_context docs generate --llm --api-key sk-...');
-    stdout.writeln('  ANTHROPIC_API_KEY=sk-... code_context docs generate --llm');
+    stdout.writeln('  code_context docs generate --collapse-threshold 300');
+    stdout.writeln('  code_context docs generate --no-collapse');
     return;
   }
 
@@ -1132,6 +1155,9 @@ Future<void> _docsGenerate(List<String> args) async {
   final useLlm = parsed['llm'] as bool;
   final verbose = parsed['verbose'] as bool;
   final apiKeyArg = parsed['api-key'] as String?;
+  final collapseThreshold = int.parse(parsed['collapse-threshold'] as String);
+  final maxDepth = int.parse(parsed['max-depth'] as String);
+  final noCollapse = parsed['no-collapse'] as bool;
 
   // Resolve API key
   String? apiKey;
@@ -1189,18 +1215,54 @@ Future<void> _docsGenerate(List<String> args) async {
       stderr.writeln('');
     }
 
-    // Create dirty tracker and compute state
+    // Compute collapse decision
+    final collapseConfig = noCollapse
+        ? CollapseConfig.disabled
+        : CollapseConfig(
+            lineThreshold: collapseThreshold,
+            hysteresisLow: (collapseThreshold * 0.9).round(),
+            hysteresisHigh: (collapseThreshold * 1.1).round(),
+            maxDepth: maxDepth,
+          );
+
+    final previousCollapseState = manifest.getPreviousCollapseState();
+    final collapseDecision = await graph.computeCollapseDecision(
+      config: collapseConfig,
+      projectRoot: projectPath,
+      previousCollapseState: previousCollapseState,
+    );
+
+    if (!noCollapse && collapseDecision.collapsedRoots.isNotEmpty) {
+      stderr.writeln('Folder collapsing:');
+      stderr.writeln('  Collapsed roots: ${collapseDecision.collapsedRoots.length}');
+      stderr.writeln('  Collapsed children: ${collapseDecision.childToRoot.length}');
+      stderr.writeln('  Expanded folders: ${collapseDecision.expandedFolders.length}');
+      stderr.writeln('');
+    }
+
+    // Handle collapse state transitions (cleanup old docs)
+    final docsRoot = '$projectPath/.dart_context/docs';
+    await _handleCollapseTransitions(
+      manifest: manifest,
+      collapseDecision: collapseDecision,
+      docsRoot: docsRoot,
+    );
+
+    // Create dirty tracker and compute state with collapse awareness
     final tracker = DirtyTracker(
       index: index,
       graph: graph,
       manifest: manifest,
     );
-    final dirtyState = tracker.computeDirtyState();
+    final dirtyState = tracker.computeDirtyStateWithCollapse(collapseDecision);
 
-    // Determine what to generate
-    final foldersToGenerate = force
-        ? graph.folders.toList()
-        : dirtyState.dirtyFolders.toList();
+    // Determine what to generate (only folders that should have docs)
+    Set<String> foldersToGenerate;
+    if (force) {
+      foldersToGenerate = collapseDecision.foldersToGenerate;
+    } else {
+      foldersToGenerate = dirtyState.dirtyFolders;
+    }
 
     if (foldersToGenerate.isEmpty) {
       stdout.writeln('No folders need regeneration.');
@@ -1219,14 +1281,17 @@ Future<void> _docsGenerate(List<String> args) async {
 
     if (dryRun) {
       stdout.writeln('Dry run - would generate:');
-      for (final folder in foldersToGenerate..sort()) {
-        stdout.writeln('  - $folder');
+      for (final folder in foldersToGenerate.toList()..sort()) {
+        final isCollapsed = collapseDecision.isCollapsedRoot(folder);
+        final suffix = isCollapsed
+            ? ' (collapsed, includes ${collapseDecision.getCollapsedSubfolders(folder).length} subfolders)'
+            : '';
+        stdout.writeln('  - $folder$suffix');
       }
       return;
     }
 
     // Create output directories
-    final docsRoot = '$projectPath/.dart_context/docs';
     final sourceDir = Directory('$docsRoot/source/folders');
     final renderedDir = Directory('$docsRoot/rendered/folders');
     await sourceDir.create(recursive: true);
@@ -1253,50 +1318,68 @@ Future<void> _docsGenerate(List<String> args) async {
         for (final folder in level) {
           if (!foldersToGenerate.contains(folder)) continue;
 
-        stderr.write('Generating: $folder... ');
+          final isCollapsed = collapseDecision.isCollapsedRoot(folder);
+          final collapsedSubfolders = isCollapsed
+              ? collapseDecision.getCollapsedSubfolders(folder)
+              : <String>[];
 
-        // Build context
-        final builder = ContextBuilder(
-          index: index,
-          graph: graph,
-          projectRoot: projectPath,
-          docsRoot: docsRoot,
-        );
-        final docContext = await builder.buildForFolder(folder);
+          final suffix = isCollapsed
+              ? ' (collapsed, ${collapsedSubfolders.length} subfolders)'
+              : '';
+          stderr.write('Generating: $folder$suffix... ');
 
-        // Generate doc
-        final generatedDoc = await generator.generateFolderDoc(docContext);
+          // Build context (different for collapsed vs regular folders)
+          final builder = ContextBuilder(
+            index: index,
+            graph: graph,
+            projectRoot: projectPath,
+            docsRoot: docsRoot,
+          );
 
-        // Write source doc (link resolution happens later for all docs)
-        final sourceFile = File('$docsRoot/source/folders/$folder/README.md');
-        await sourceFile.parent.create(recursive: true);
-        await sourceFile.writeAsString(generatedDoc.content);
+          final docContext = isCollapsed
+              ? await builder.buildForCollapsedFolder(folder, collapsedSubfolders)
+              : await builder.buildForFolder(folder);
 
-        // Update manifest
-        final structureHash = StructureHash.computeFolderHash(index, folder);
-        manifest.updateFolder(
-          folder,
-          DirtyTracker.createFolderState(
-            structureHash: structureHash,
-            docContent: generatedDoc.content,
-            internalDeps: docContext.current.internalDeps.toList(),
-            externalDeps: docContext.current.externalDeps.toList(),
-            smartSymbols: generatedDoc.smartSymbols,
-          ),
-        );
+          // Generate doc
+          final generatedDoc = await generator.generateFolderDoc(docContext);
 
-        generatedCount++;
+          // Write source doc (link resolution happens later for all docs)
+          final sourceFile = File('$docsRoot/source/folders/$folder/README.md');
+          await sourceFile.parent.create(recursive: true);
+          await sourceFile.writeAsString(generatedDoc.content);
 
-        // Track token usage for agentic generator
-        if (generator is DocGenerationAgent) {
-          final (input, output) = generator.tokenUsage;
-          totalInputTokens = input;
-          totalOutputTokens = output;
+          // Compute structure hash (different for collapsed folders)
+          final structureHash = isCollapsed
+              ? StructureHash.computeCollapsedFolderHash(
+                  index, folder, collapsedSubfolders)
+              : StructureHash.computeFolderHash(index, folder);
+
+          // Update manifest
+          manifest.updateFolder(
+            folder,
+            DirtyTracker.createFolderState(
+              structureHash: structureHash,
+              docContent: generatedDoc.content,
+              internalDeps: docContext.current.internalDeps.toList(),
+              externalDeps: docContext.current.externalDeps.toList(),
+              smartSymbols: generatedDoc.smartSymbols,
+              isCollapsed: isCollapsed,
+              collapsedSubfolders: collapsedSubfolders,
+            ),
+          );
+
+          generatedCount++;
+
+          // Track token usage for agentic generator
+          if (generator is DocGenerationAgent) {
+            final (input, output) = generator.tokenUsage;
+            totalInputTokens = input;
+            totalOutputTokens = output;
+          }
+
+          stderr.writeln('✓');
         }
-
-        stderr.writeln('✓');
       }
-    }
     } // End of generation stage
 
     // Save manifest
@@ -1479,5 +1562,81 @@ Future<void> _docsResolve(List<String> args) async {
     stdout.writeln('Rendered docs: $docsRoot/rendered/folders/');
   } finally {
     await context?.dispose();
+  }
+}
+
+/// Handle collapse state transitions by cleaning up old docs.
+///
+/// When a folder transitions:
+/// - Collapsed -> Expanded: Delete collapsed doc, subfolders will get individual docs
+/// - Expanded -> Collapsed: Delete individual subfolder docs, root will get collapsed doc
+Future<void> _handleCollapseTransitions({
+  required DocManifest manifest,
+  required CollapseDecision collapseDecision,
+  required String docsRoot,
+}) async {
+  var transitionCount = 0;
+
+  // Case 1: Was collapsed, now expanded
+  // Need to delete the collapsed root doc (subfolders will be regenerated)
+  for (final entry in manifest.folders.entries) {
+    final folder = entry.key;
+    final state = entry.value;
+
+    if (state.isCollapsed && !collapseDecision.isCollapsedRoot(folder)) {
+      // This folder was collapsed but is now expanded
+      stderr.writeln('Transition: $folder collapsed -> expanded');
+
+      // Delete the old collapsed doc
+      await _deleteDocFiles(docsRoot, folder);
+
+      // Remove manifest entry (will be regenerated as expanded)
+      manifest.folders.remove(folder);
+
+      // The old collapsed subfolders will be regenerated individually
+      transitionCount++;
+    }
+  }
+
+  // Case 2: Was expanded (or new), now collapsed child
+  // Need to delete individual docs for folders that are now collapsed children
+  for (final entry in collapseDecision.childToRoot.entries) {
+    final child = entry.key;
+    final root = entry.value;
+
+    // Check if this child had its own doc before
+    if (manifest.folders.containsKey(child)) {
+      final state = manifest.folders[child]!;
+      if (!state.isCollapsed) {
+        // This folder had an individual doc, now it's a collapsed child
+        stderr.writeln('Transition: $child expanded -> collapsed (under $root)');
+
+        // Delete the old individual doc
+        await _deleteDocFiles(docsRoot, child);
+
+        // Remove manifest entry (will be included in parent's collapsed doc)
+        manifest.folders.remove(child);
+
+        transitionCount++;
+      }
+    }
+  }
+
+  if (transitionCount > 0) {
+    stderr.writeln('Handled $transitionCount collapse transition(s)');
+    stderr.writeln('');
+  }
+}
+
+/// Delete source and rendered doc files for a folder.
+Future<void> _deleteDocFiles(String docsRoot, String folder) async {
+  final sourceDir = Directory('$docsRoot/source/folders/$folder');
+  final renderedDir = Directory('$docsRoot/rendered/folders/$folder');
+
+  if (await sourceDir.exists()) {
+    await sourceDir.delete(recursive: true);
+  }
+  if (await renderedDir.exists()) {
+    await renderedDir.delete(recursive: true);
   }
 }
