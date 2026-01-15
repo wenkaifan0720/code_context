@@ -174,13 +174,24 @@ class FolderDependencyGraph {
     final externalDeps = <String, Set<String>>{};
     final dependents = <String, Set<String>>{};
 
-    // First pass: collect all folders
+    // First pass: collect all folders AND their ancestors
+    // This ensures intermediate directories (like lib/features/auth/)
+    // are included even if they don't contain files directly.
     for (final file in index.files) {
-      final folder = p.dirname(file);
-      folders.add(folder);
-      internalDeps.putIfAbsent(folder, () => {});
-      externalDeps.putIfAbsent(folder, () => {});
-      dependents.putIfAbsent(folder, () => {});
+      var folder = p.dirname(file);
+      
+      // Add this folder and all ancestors up to (but not including) root
+      while (folder.isNotEmpty && folder != '.' && folder != '/') {
+        if (folders.add(folder)) {
+          // Only initialize if newly added
+          internalDeps.putIfAbsent(folder, () => {});
+          externalDeps.putIfAbsent(folder, () => {});
+          dependents.putIfAbsent(folder, () => {});
+        }
+        final parent = p.dirname(folder);
+        if (parent == folder) break; // Reached root
+        folder = parent;
+      }
     }
 
     // Second pass: analyze imports via SCIP relationships
@@ -329,6 +340,10 @@ class FolderDependencyGraph {
   /// 2. Depth: Folders more than maxDepth levels under lib/ are collapsed
   ///
   /// Uses hysteresis to prevent oscillation at boundaries.
+  /// 
+  /// **Key: Top-down evaluation** - We check parent folders first.
+  /// If a parent qualifies for collapse, ALL its descendants become
+  /// collapsed children, and we generate only one doc for the parent.
   Future<CollapseDecision> computeCollapseDecision({
     required CollapseConfig config,
     required String projectRoot,
@@ -346,17 +361,16 @@ class FolderDependencyGraph {
     // Step 1: Compute line counts for each folder subtree
     final folderLineCounts = await _computeFolderLineCounts(projectRoot);
 
-    // Step 2: Build parent-child relationships
-    final children = _computeChildRelationships();
-
-    // Step 3: Determine collapse state for each folder
+    // Step 2: Determine collapse state for each folder (top-down)
     final collapsedRoots = <String>{};
     final childToRoot = <String, String>{};
     final expandedFolders = <String>{};
 
-    // Process folders from deepest to shallowest
+    // Process folders from SHALLOWEST to DEEPEST (top-down)
+    // This ensures parent folders are evaluated first - if a parent
+    // qualifies for collapse, all descendants become collapsed children.
     final sortedFolders = folders.toList()
-      ..sort((a, b) => b.split('/').length.compareTo(a.split('/').length));
+      ..sort((a, b) => a.split('/').length.compareTo(b.split('/').length));
 
     for (final folder in sortedFolders) {
       // Skip if already marked as a child of a collapsed root
@@ -373,14 +387,14 @@ class FolderDependencyGraph {
         // This folder becomes a collapsed root
         collapsedRoots.add(folder);
 
-        // Mark all descendants as children of this root
-        _markDescendantsAsChildren(
-          folder,
-          folder,
-          children,
-          childToRoot,
-          collapsedRoots,
-        );
+        // Mark ALL descendants as children of this root
+        // This handles "virtual" folders (folders without files)
+        for (final otherFolder in folders) {
+          if (otherFolder != folder &&
+              otherFolder.startsWith('$folder/')) {
+            childToRoot[otherFolder] = folder;
+          }
+        }
       } else {
         expandedFolders.add(folder);
       }
@@ -461,39 +475,6 @@ class FolderDependencyGraph {
     return total;
   }
 
-  /// Build parent -> children mapping.
-  Map<String, Set<String>> _computeChildRelationships() {
-    final children = <String, Set<String>>{};
-    for (final folder in folders) {
-      children[folder] = {};
-    }
-
-    for (final folder in folders) {
-      // Find immediate parent
-      final parent = _findImmediateParent(folder);
-      if (parent != null && folders.contains(parent)) {
-        children[parent]!.add(folder);
-      }
-    }
-
-    return children;
-  }
-
-  /// Find the immediate parent folder.
-  String? _findImmediateParent(String folder) {
-    final parts = folder.split('/');
-    if (parts.length <= 1) return null;
-
-    // Try successively shorter paths to find a folder that exists
-    for (var i = parts.length - 1; i > 0; i--) {
-      final parentPath = parts.sublist(0, i).join('/');
-      if (folders.contains(parentPath)) {
-        return parentPath;
-      }
-    }
-
-    return null;
-  }
 
   /// Determine if a folder should be collapsed.
   bool _shouldCollapse({
@@ -531,30 +512,6 @@ class FolderDependencyGraph {
     // Count depth after lib/
     final depthAfterLib = parts.length - libIndex - 1;
     return depthAfterLib > maxDepth;
-  }
-
-  /// Mark all descendants of a folder as children of a collapse root.
-  void _markDescendantsAsChildren(
-    String folder,
-    String root,
-    Map<String, Set<String>> children,
-    Map<String, String> childToRoot,
-    Set<String> collapsedRoots,
-  ) {
-    for (final child in children[folder] ?? <String>{}) {
-      // Don't mark if already a collapsed root itself
-      if (!collapsedRoots.contains(child)) {
-        childToRoot[child] = root;
-        // Recursively mark children's children
-        _markDescendantsAsChildren(
-          child,
-          root,
-          children,
-          childToRoot,
-          collapsedRoots,
-        );
-      }
-    }
   }
 
   @override

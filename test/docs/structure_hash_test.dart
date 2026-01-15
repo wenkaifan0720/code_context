@@ -122,13 +122,17 @@ void main() {
     });
 
     group('computeFolderHash', () {
-      test('only includes files directly in folder', () {
-        // This would need a real ScipIndex to test properly
-        // For now, we test the helper method
-        expect(
-          StructureHash.computeFolderHash(ScipIndex.empty(), 'lib/auth'),
-          equals(''),
-        );
+      test('returns non-empty hash even for empty folders', () {
+        // Empty folders still get a hash (based on folder path as salt)
+        // This ensures container folders can be tracked
+        final hash = StructureHash.computeFolderHash(ScipIndex.empty(), 'lib/auth');
+        expect(hash, isNotEmpty);
+      });
+
+      test('different folders get different hashes', () {
+        final hash1 = StructureHash.computeFolderHash(ScipIndex.empty(), 'lib/auth');
+        final hash2 = StructureHash.computeFolderHash(ScipIndex.empty(), 'lib/core');
+        expect(hash1, isNot(equals(hash2)));
       });
     });
   });

@@ -240,21 +240,55 @@ void main() {
 
       final decision = await graph.computeCollapseDecision(
         config: const CollapseConfig(
-          lineThreshold: 10000, // High threshold, won't trigger
-          maxDepth: 3, // Will trigger for entities
+          lineThreshold: 0,
+          hysteresisLow: 0, // Disable line-based collapse
+          hysteresisHigh: 0,
+          maxDepth: 3, // Will trigger for entities (4 levels deep)
         ),
         projectRoot: Directory.systemTemp.path,
       );
 
       // entities is 4 levels deep under lib, should be collapsed
-      // But since there's nothing above it that's under threshold,
-      // the parent (models) should be the collapse root
-      // Actually, since entities exceeds depth, it should be collapsed
+      // With top-down evaluation and lineThreshold=0, only depth matters
+      // entities exceeds maxDepth (4 > 3), so it should be a collapsed root
       expect(
-        decision.collapsedRoots.any((r) => r.contains('entities') || r.contains('models')),
+        decision.collapsedRoots.contains('lib/features/auth/models/entities'),
         true,
-        reason: 'Deep folders should trigger collapse',
+        reason: 'Folder at depth 4 should trigger depth-based collapse',
       );
+      // Shallower folders should remain expanded
+      expect(decision.expandedFolders.contains('lib'), true);
+      expect(decision.expandedFolders.contains('lib/features'), true);
+      expect(decision.expandedFolders.contains('lib/features/auth'), true);
+      expect(decision.expandedFolders.contains('lib/features/auth/models'), true);
+    });
+
+    test('line-based collapse from top-down', () async {
+      // Create a graph with nested folders
+      final graph = FolderDependencyGraph.forTesting(
+        folders: {
+          'lib',
+          'lib/features',
+          'lib/features/auth',
+        },
+        internalDeps: {},
+      );
+
+      final decision = await graph.computeCollapseDecision(
+        config: const CollapseConfig(
+          lineThreshold: 500, // Will trigger for all (0 lines)
+          maxDepth: 99, // Won't trigger
+        ),
+        projectRoot: Directory.systemTemp.path,
+      );
+
+      // With top-down evaluation, lib collapses first (0 < 450)
+      // All descendants become collapsed children
+      expect(decision.collapsedRoots.contains('lib'), true,
+          reason: 'Shallowest folder should collapse first');
+      expect(decision.childToRoot['lib/features'], 'lib');
+      expect(decision.childToRoot['lib/features/auth'], 'lib');
+      expect(decision.expandedFolders, isEmpty);
     });
   });
 }

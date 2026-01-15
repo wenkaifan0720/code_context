@@ -65,11 +65,16 @@ class StructureHash {
   ///
   /// Parts are sorted for deterministic ordering regardless of
   /// symbol declaration order.
-  static String computeHash(List<String> parts) {
-    if (parts.isEmpty) return '';
-
+  static String computeHash(List<String> parts, {String? salt}) {
     // Sort for consistent ordering
     final sorted = List<String>.from(parts)..sort();
+    
+    // Add salt if provided (for empty folders to have unique hashes)
+    if (salt != null) {
+      sorted.add('salt:$salt');
+    }
+    
+    if (sorted.isEmpty) return '';
 
     // Compute MD5 hash
     final content = sorted.join('|');
@@ -97,7 +102,8 @@ class StructureHash {
     }
 
     final parts = extractDocRelevantParts(symbols);
-    return computeHash(parts);
+    // Use folder path as salt to ensure even empty folders get a hash
+    return computeHash(parts, salt: normalizedFolder);
   }
 
   /// Compute structure hash for a single file.
