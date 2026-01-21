@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:scip_server/scip_server.dart';
 
-/// Language-agnostic semantic code intelligence.
+/// Language-agnostic semantic code intelligence with SQL query interface.
 ///
-/// Provides incremental indexing and a query DSL for navigating
+/// Provides incremental indexing and SQL queries for navigating
 /// codebases in any supported language.
 ///
 /// ## Usage
@@ -13,25 +13,56 @@ import 'package:scip_server/scip_server.dart';
 /// // Auto-detect language from project files
 /// final context = await CodeContext.open('/path/to/project');
 ///
-/// // Or specify a language binding explicitly
-/// final context = await CodeContext.open(
-///   '/path/to/project',
-///   binding: DartBinding(),
-/// );
-///
-/// // Query with DSL
-/// final result = await context.query('def AuthRepository');
+/// // Query with SQL
+/// final result = await context.sql('SELECT * FROM symbols WHERE name = ?', ['MyClass']);
 /// print(result.toText());
 ///
 /// // Load dependencies for cross-package queries
 /// await context.loadDependencies();
 ///
-/// // Query with full dependency support
-/// final hierarchy = await context.query('hierarchy MyWidget');
+/// // Query across packages
+/// final result = await context.sql('''
+///   SELECT name, kind, package FROM symbols
+///   WHERE name LIKE '%Widget%' AND kind = 'class'
+/// ''');
 ///
 /// // Cleanup
 /// await context.dispose();
 /// ```
+///
+/// ## SQL Schema
+///
+/// Three main tables are available:
+///
+/// ### symbols
+/// - `scip_id` (TEXT PRIMARY KEY) - SCIP symbol identifier
+/// - `name` (TEXT) - Symbol name
+/// - `kind` (TEXT) - Symbol kind (class, method, function, field, etc.)
+/// - `file` (TEXT) - Relative file path (NULL for external symbols)
+/// - `line` (INTEGER) - Definition line number (0-indexed)
+/// - `column_num` (INTEGER) - Definition column number
+/// - `package` (TEXT) - Package name
+/// - `version` (TEXT) - Package version
+/// - `container_id` (TEXT) - Parent symbol SCIP ID
+/// - `display_name` (TEXT) - Human-readable display name
+/// - `documentation` (TEXT) - Documentation string
+/// - `language` (TEXT) - Language identifier
+///
+/// ### occurrences
+/// - `id` (INTEGER PRIMARY KEY) - Auto-increment ID
+/// - `symbol_id` (TEXT) - References symbols.scip_id
+/// - `file` (TEXT) - File path
+/// - `line` (INTEGER) - Line number (0-indexed)
+/// - `column_num` (INTEGER) - Column number
+/// - `end_line` (INTEGER) - End line number
+/// - `end_column` (INTEGER) - End column number
+/// - `is_definition` (INTEGER) - 1 if definition, 0 if reference
+/// - `enclosing_end_line` (INTEGER) - End line of enclosing scope
+///
+/// ### relationships
+/// - `from_symbol` (TEXT) - Source symbol SCIP ID
+/// - `to_symbol` (TEXT) - Target symbol SCIP ID
+/// - `kind` (TEXT) - Relationship kind (implements, calls, type_definition, references)
 ///
 /// ## Supported Languages
 ///
@@ -40,12 +71,15 @@ import 'package:scip_server/scip_server.dart';
 class CodeContext {
   CodeContext._({
     required LanguageContext languageContext,
-    required QueryExecutor executor,
+    required SqlIndex sqlIndex,
+    required SqlExecutor executor,
   })  : _context = languageContext,
+        _sqlIndex = sqlIndex,
         _executor = executor;
 
   final LanguageContext _context;
-  final QueryExecutor _executor;
+  final SqlIndex _sqlIndex;
+  final SqlExecutor _executor;
 
   // Registered language bindings for auto-detection
   static final List<LanguageBinding> _registeredBindings = [];
@@ -78,7 +112,8 @@ class CodeContext {
   /// 2. Discover all packages in the path
   /// 3. Create indexers for each package
   /// 4. Load from cache (if valid and [useCache] is true)
-  /// 5. Start file watching (if [watch] is true)
+  /// 5. Build in-memory SQLite database from SCIP data
+  /// 6. Start file watching (if [watch] is true)
   ///
   /// Example:
   /// ```dart
@@ -126,18 +161,34 @@ class CodeContext {
       await languageContext.loadDependencies();
     }
 
-    // 4. Create query executor with provider for cross-package queries
-    final executor = QueryExecutor(
-      languageContext.index,
-      provider: languageContext.provider,
-    );
+    // 4. Build SQL index from SCIP data
+    onProgress?.call('Building SQL index...');
+    final sqlIndex = SqlIndex.inMemory();
+    final converter = ScipToSql(sqlIndex);
+
+    // Load project index into SQL
+    _loadScipIndexToSql(converter, languageContext.index);
+
+    // Load dependency indexes if available
+    for (final depIndex in languageContext.allExternalIndexes) {
+      _loadScipIndexToSql(converter, depIndex);
+    }
+
+    // 5. Create SQL executor
+    final executor = SqlExecutor(sqlIndex);
 
     onProgress?.call('Ready');
 
     return CodeContext._(
       languageContext: languageContext,
+      sqlIndex: sqlIndex,
       executor: executor,
     );
+  }
+
+  /// Load SCIP index data into SQL database.
+  static void _loadScipIndexToSql(ScipToSql converter, ScipIndex scipIndex) {
+    converter.loadFromScipIndex(scipIndex);
   }
 
   /// Auto-detect language from project files.
@@ -183,11 +234,8 @@ class CodeContext {
   /// The underlying language context.
   LanguageContext get context => _context;
 
-  /// Primary index for direct programmatic queries.
-  ScipIndex get index => _context.index;
-
-  /// Provider for cross-package queries.
-  IndexProvider? get provider => _context.provider;
+  /// The SQL database (for advanced use).
+  SqlIndex get sqlIndex => _sqlIndex;
 
   /// All discovered packages.
   List<DiscoveredPackage> get packages => _context.packages;
@@ -198,48 +246,97 @@ class CodeContext {
   /// Stream of index updates from all packages.
   Stream<IndexUpdate> get updates => _context.updates;
 
-  /// Execute a query using the DSL.
+  /// Execute a SQL query against the code index.
   ///
-  /// Supported queries:
-  /// - `def <symbol>` - Find definition
-  /// - `refs <symbol>` - Find references
-  /// - `members <symbol>` - Get class members
-  /// - `impls <symbol>` - Find implementations
-  /// - `supertypes <symbol>` - Get supertypes
-  /// - `subtypes <symbol>` - Get subtypes
-  /// - `hierarchy <symbol>` - Full hierarchy
-  /// - `source <symbol>` - Get source code
-  /// - `find <pattern> [kind:<kind>] [in:<path>]` - Search
-  /// - `grep <pattern>` - Search source code
-  /// - `files` - List indexed files
-  /// - `stats` - Index statistics
+  /// Returns a [SqlResult] with rows, columns, and formatting methods.
   ///
-  /// Example:
+  /// ## Example Queries
+  ///
   /// ```dart
-  /// final result = await context.query('refs AuthRepository.login');
-  /// print(result.toText());
+  /// // Find all classes
+  /// final result = await context.sql('SELECT * FROM symbols WHERE kind = ?', ['class']);
+  ///
+  /// // Find symbol definition
+  /// final result = await context.sql('''
+  ///   SELECT s.name, s.kind, o.file, o.line
+  ///   FROM symbols s
+  ///   JOIN occurrences o ON s.scip_id = o.symbol_id
+  ///   WHERE s.name = ? AND o.is_definition = 1
+  /// ''', ['MyClass']);
+  ///
+  /// // Find all references
+  /// final result = await context.sql('''
+  ///   SELECT o.file, o.line, o.column_num
+  ///   FROM occurrences o
+  ///   JOIN symbols s ON o.symbol_id = s.scip_id
+  ///   WHERE s.name = ? AND o.is_definition = 0
+  /// ''', ['login']);
+  ///
+  /// // Get class members
+  /// final result = await context.sql('''
+  ///   SELECT * FROM symbols
+  ///   WHERE container_id = (SELECT scip_id FROM symbols WHERE name = ?)
+  /// ''', ['MyClass']);
+  ///
+  /// // Find callers
+  /// final result = await context.sql('''
+  ///   SELECT s.name, s.kind, s.file
+  ///   FROM relationships r
+  ///   JOIN symbols s ON r.from_symbol = s.scip_id
+  ///   WHERE r.to_symbol IN (SELECT scip_id FROM symbols WHERE name = ?)
+  ///     AND r.kind = 'calls'
+  /// ''', ['login']);
   /// ```
-  Future<QueryResult> query(String queryString) {
-    return _executor.execute(queryString);
+  SqlResult sql(String query, [List<Object?> parameters = const []]) {
+    return _executor.execute(query, parameters);
   }
 
-  /// Execute a parsed query.
-  Future<QueryResult> executeQuery(ScipQuery query) {
-    return _executor.executeQuery(query);
-  }
+  /// Get the SQL schema (for documentation).
+  String get schema => _sqlIndex.schema;
 
   /// Manually refresh a specific file.
+  ///
+  /// Note: After refresh, you should call [rebuildSqlIndex] to update the SQL database.
   Future<bool> refreshFile(String filePath) {
     return _context.refreshFile(filePath);
   }
 
   /// Manually refresh all files in all packages.
+  ///
+  /// Note: After refresh, you should call [rebuildSqlIndex] to update the SQL database.
   Future<void> refreshAll() {
     return _context.refreshAll();
   }
 
+  /// Rebuild the SQL index from current SCIP data.
+  ///
+  /// Call this after [refreshFile] or [refreshAll] to update the SQL database.
+  void rebuildSqlIndex() {
+    // Clear existing data
+    _sqlIndex.execute('DELETE FROM relationships');
+    _sqlIndex.execute('DELETE FROM occurrences');
+    _sqlIndex.execute('DELETE FROM symbols');
+
+    // Reload
+    final converter = ScipToSql(_sqlIndex);
+    _loadScipIndexToSql(converter, _context.index);
+
+    for (final depIndex in _context.allExternalIndexes) {
+      _loadScipIndexToSql(converter, depIndex);
+    }
+  }
+
   /// Get combined index statistics.
-  Map<String, dynamic> get stats => _context.stats;
+  Map<String, dynamic> get stats {
+    final sqlStats = _sqlIndex.stats;
+    return {
+      'files': _context.stats['files'],
+      'symbols': sqlStats['symbols'],
+      'occurrences': sqlStats['occurrences'],
+      'relationships': sqlStats['relationships'],
+      'packages': _context.packageCount,
+    };
+  }
 
   /// Whether external dependencies are loaded.
   bool get hasDependencies => _context.hasDependencies;
@@ -247,14 +344,17 @@ class CodeContext {
   /// Load external dependencies for cross-package queries.
   ///
   /// For Dart: loads SDK, Flutter, and pub.dev package indexes.
-  Future<void> loadDependencies() {
-    return _context.loadDependencies();
+  /// After loading, call [rebuildSqlIndex] to include them in SQL queries.
+  Future<void> loadDependencies() async {
+    await _context.loadDependencies();
+    rebuildSqlIndex();
   }
 
   /// Dispose of resources.
   ///
-  /// Stops file watching and cleans up all indexers.
-  Future<void> dispose() {
-    return _context.dispose();
+  /// Stops file watching, cleans up all indexers, and closes the SQL database.
+  Future<void> dispose() async {
+    _sqlIndex.dispose();
+    await _context.dispose();
   }
 }

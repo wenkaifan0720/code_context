@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'index/index_provider.dart';
 import 'index/scip_index.dart';
 
 /// Interface for language-specific SCIP implementations.
@@ -19,9 +18,15 @@ import 'index/scip_index.dart';
 /// // Create a context for a project
 /// final context = await binding.createContext('/path/to/project');
 ///
-/// // Query the index
-/// final executor = QueryExecutor(context.index, provider: context.provider);
-/// final result = await executor.execute('def MyClass');
+/// // Execute SQL queries against the index
+/// final db = SqlIndex.inMemory();
+/// final converter = ScipToSql(db);
+/// converter.loadFromScipIndex(context.index);
+/// for (final ext in context.allExternalIndexes) {
+///   converter.loadFromScipIndex(ext);
+/// }
+///
+/// final result = db.select("SELECT * FROM symbols WHERE kind = 'class'");
 ///
 /// // Cleanup
 /// await context.dispose();
@@ -86,7 +91,7 @@ abstract class LanguageBinding {
 ///
 /// Created by [LanguageBinding.createContext], this provides:
 /// - Combined index for all packages
-/// - Cross-package query support via [provider]
+/// - Access to external package indexes (after [loadDependencies])
 /// - Optional dependency loading
 abstract class LanguageContext {
   /// Root path of the project.
@@ -101,10 +106,11 @@ abstract class LanguageContext {
   /// Combined index for all local packages.
   ScipIndex get index;
 
-  /// Provider for cross-package queries (includes dependencies if loaded).
+  /// All external package indexes (SDK, dependencies, etc.)
   ///
-  /// Pass this to [QueryExecutor] for full cross-package support.
-  IndexProvider? get provider;
+  /// Empty until [loadDependencies] is called.
+  /// Used to build a combined SQL database for cross-package queries.
+  Iterable<ScipIndex> get allExternalIndexes;
 
   /// Stream of index updates from all packages.
   Stream<IndexUpdate> get updates;

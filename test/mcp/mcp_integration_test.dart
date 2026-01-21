@@ -67,19 +67,19 @@ class MyClass {
         final tools = await env.serverConnection.listTools();
         final toolNames = tools.tools.map((t) => t.name).toSet();
 
-        expect(toolNames, contains('dart_query'));
+        expect(toolNames, contains('dart_sql'));
         expect(toolNames, contains('dart_index_flutter'));
         expect(toolNames, contains('dart_index_deps'));
         expect(toolNames, contains('dart_refresh'));
         expect(toolNames, contains('dart_status'));
       });
 
-      test('dart_query tool has correct schema', () async {
+      test('dart_sql tool has correct schema', () async {
         final tools = await env.serverConnection.listTools();
-        final queryTool = tools.tools.firstWhere((t) => t.name == 'dart_query');
+        final sqlTool = tools.tools.firstWhere((t) => t.name == 'dart_sql');
 
-        expect(queryTool.description, contains('Query'));
-        expect(queryTool.inputSchema, isNotNull);
+        expect(sqlTool.description, contains('SQL'));
+        expect(sqlTool.inputSchema, isNotNull);
       });
     });
 
@@ -121,12 +121,12 @@ class MyClass {
         expect(result.textContent.isNotEmpty, isTrue);
       });
 
-      test('dart_query with missing query fails validation', () async {
-        final result = await env.callTool('dart_query', {});
+      test('dart_sql with missing sql fails validation', () async {
+        final result = await env.callTool('dart_sql', {});
 
         expect(result.isError, isTrue);
         // MCP validates schema before calling handler
-        expect(result.textContent, contains('query'));
+        expect(result.textContent, contains('sql'));
       });
     });
 
@@ -143,26 +143,26 @@ class MyClass {
       });
     });
 
-    group('Real Query Execution', () {
+    group('Real SQL Query Execution', () {
       // Note: These tests use the default root (set during init) rather than
       // an explicit project path, because the MCP root matching uses URI comparison.
 
-      test('dart_query stats returns index statistics', () async {
-        final result = await env.callTool('dart_query', {
-          'query': 'stats',
+      test('dart_sql SELECT COUNT returns symbol count', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': 'SELECT COUNT(*) as count FROM symbols',
         });
 
         // Debug: print result content if it fails
         if (result.isError == true) {
           fail('Query failed: ${result.textContent}');
         }
-        expect(result.textContent, contains('Index Statistics'));
-        expect(result.textContent, contains('Files:'));
-        expect(result.textContent, contains('Symbols:'));
+        expect(result.textContent, contains('count'));
       });
 
-      test('dart_query find * returns symbols', () async {
-        final result = await env.callTool('dart_query', {'query': 'find *'});
+      test('dart_sql SELECT all symbols returns results', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': 'SELECT name, kind FROM symbols',
+        });
 
         if (result.isError == true) {
           fail('Query failed: ${result.textContent}');
@@ -171,20 +171,27 @@ class MyClass {
         expect(result.textContent, contains('main'));
       });
 
-      test('dart_query def finds definition', () async {
-        final result =
-            await env.callTool('dart_query', {'query': 'def MyClass'});
+      test('dart_sql finds symbol by name', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': "SELECT name, kind FROM symbols WHERE name = 'MyClass'",
+        });
 
         if (result.isError == true) {
           fail('Query failed: ${result.textContent}');
         }
         expect(result.textContent, contains('MyClass'));
-        expect(result.textContent, contains('lib/main.dart'));
       });
 
-      test('dart_query members returns class members', () async {
-        final result =
-            await env.callTool('dart_query', {'query': 'members MyClass'});
+      test('dart_sql finds members via container relationship', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': '''
+            SELECT child.name, child.kind 
+            FROM symbols child
+            WHERE child.container_id = (
+              SELECT scip_id FROM symbols WHERE name = 'MyClass'
+            )
+          ''',
+        });
 
         if (result.isError == true) {
           fail('Query failed: ${result.textContent}');
@@ -192,34 +199,24 @@ class MyClass {
         expect(result.textContent, contains('doSomething'));
       });
 
-      test('dart_query source returns source code', () async {
-        final result =
-            await env.callTool('dart_query', {'query': 'source MyClass'});
+      test('dart_sql GLOB pattern search works', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': "SELECT name FROM symbols WHERE name GLOB 'My*'",
+        });
 
         if (result.isError == true) {
           fail('Query failed: ${result.textContent}');
         }
-        expect(result.textContent, contains('class MyClass'));
-        expect(result.textContent, contains('doSomething'));
+        expect(result.textContent, contains('MyClass'));
       });
 
-      test('dart_query find shows all matches with context', () async {
-        final result =
-            await env.callTool('dart_query', {'query': 'find main'});
+      test('dart_sql querying distinct files works', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': 'SELECT DISTINCT file FROM symbols WHERE file IS NOT NULL',
+        });
 
-        if (result.isError == true) {
-          fail('Query failed: ${result.textContent}');
-        }
-        expect(result.textContent, contains('main'));
-      });
-
-      test('dart_query hierarchy returns type hierarchy', () async {
-        final result =
-            await env.callTool('dart_query', {'query': 'hierarchy MyClass'});
-
-        // Returns hierarchy info
         expect(result.isError, isNot(true));
-        expect(result.textContent, contains('MyClass'));
+        expect(result.textContent, contains('main.dart'));
       });
     });
 
@@ -250,14 +247,24 @@ class MyClass {
     });
 
     group('Error Handling', () {
-      test('dart_query with invalid syntax returns result', () async {
-        final result = await env.callTool('dart_query', {
-          'query': 'invalidcommand xyz',
+      test('dart_sql with invalid SQL returns error', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': 'INVALID SQL SYNTAX HERE',
         });
 
-        // Invalid commands return a result with error info in the text
+        // Invalid SQL returns an error
+        expect(result.isError, isTrue);
         expect(result.textContent, isNotEmpty);
-        expect(result.textContent, contains('Unknown'));
+      });
+
+      test('dart_sql with write operations returns error', () async {
+        final result = await env.callTool('dart_sql', {
+          'sql': 'DROP TABLE symbols',
+        });
+
+        // Write operations are blocked
+        expect(result.isError, isTrue);
+        expect(result.textContent, contains('SELECT'));
       });
 
       test('dart_index_deps without pubspec.lock fails gracefully', () async {

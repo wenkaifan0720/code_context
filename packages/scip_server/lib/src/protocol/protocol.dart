@@ -16,11 +16,14 @@ abstract class ScipMethod {
   /// Shutdown the server.
   static const shutdown = 'shutdown';
 
-  /// Execute a DSL query.
-  static const query = 'query';
+  /// Execute a SQL query.
+  static const sql = 'sql';
 
   /// Get index status/statistics.
   static const status = 'status';
+
+  /// Get the SQL schema.
+  static const schema = 'schema';
 
   /// Notify of file change (request incremental update).
   static const didChangeFile = 'file/didChange';
@@ -88,34 +91,38 @@ class InitializeResult {
       };
 }
 
-/// Query request parameters.
-class QueryParams {
-  const QueryParams({
-    required this.query,
+/// SQL query request parameters.
+class SqlParams {
+  const SqlParams({
+    required this.sql,
+    this.parameters = const [],
     this.format = 'text',
   });
 
-  factory QueryParams.fromJson(Map<String, dynamic> json) {
-    return QueryParams(
-      query: json['query'] as String,
+  factory SqlParams.fromJson(Map<String, dynamic> json) {
+    return SqlParams(
+      sql: json['sql'] as String,
+      parameters: (json['parameters'] as List<dynamic>?)?.cast<Object?>() ?? const [],
       format: json['format'] as String? ?? 'text',
     );
   }
 
-  final String query;
+  final String sql;
+  final List<Object?> parameters;
 
-  /// Output format: 'text' (human-readable) or 'json' (structured).
+  /// Output format: 'text' (markdown table) or 'json' (structured).
   final String format;
 
   Map<String, dynamic> toJson() => {
-        'query': query,
+        'sql': sql,
+        'parameters': parameters,
         'format': format,
       };
 }
 
-/// Query response.
-class QueryResponse {
-  const QueryResponse({
+/// SQL query response.
+class SqlResponse {
+  const SqlResponse({
     required this.success,
     this.result,
     this.error,
@@ -140,7 +147,8 @@ class StatusResult {
     this.projectName,
     this.fileCount,
     this.symbolCount,
-    this.referenceCount,
+    this.occurrenceCount,
+    this.relationshipCount,
     this.packages,
   });
 
@@ -149,7 +157,8 @@ class StatusResult {
   final String? projectName;
   final int? fileCount;
   final int? symbolCount;
-  final int? referenceCount;
+  final int? occurrenceCount;
+  final int? relationshipCount;
   final List<String>? packages;
 
   Map<String, dynamic> toJson() => {
@@ -158,7 +167,8 @@ class StatusResult {
         if (projectName != null) 'projectName': projectName,
         if (fileCount != null) 'fileCount': fileCount,
         if (symbolCount != null) 'symbolCount': symbolCount,
-        if (referenceCount != null) 'referenceCount': referenceCount,
+        if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
+        if (relationshipCount != null) 'relationshipCount': relationshipCount,
         if (packages != null) 'packages': packages,
       };
 }
@@ -263,7 +273,7 @@ class JsonRpcError {
 
   /// Custom error codes (server-defined, -32000 to -32099).
   static const notInitialized = -32002;
-  static const queryFailed = -32001;
+  static const sqlFailed = -32001;
 
   Map<String, dynamic> toJson() => {
         'code': code,
@@ -271,4 +281,3 @@ class JsonRpcError {
         if (data != null) 'data': data,
       };
 }
-

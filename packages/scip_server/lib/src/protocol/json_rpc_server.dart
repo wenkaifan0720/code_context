@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../language_binding.dart';
-import '../query/query_executor.dart';
+import '../sql/scip_to_sql.dart';
+import '../sql/sql_executor.dart';
+import '../sql/sql_index.dart';
 import 'protocol.dart';
 
 /// SCIP Protocol Server.
 ///
-/// A JSON-RPC 2.0 server that provides semantic code intelligence services.
+/// A JSON-RPC 2.0 server that provides semantic code intelligence via SQL.
 /// Can communicate over stdio or TCP.
 ///
 /// ## Usage
@@ -30,7 +32,8 @@ import 'protocol.dart';
 /// The server implements a simple JSON-RPC 2.0 protocol:
 ///
 /// - `initialize` - Initialize project with language binding
-/// - `query` - Execute a DSL query
+/// - `sql` - Execute a SQL query
+/// - `schema` - Get the SQL schema
 /// - `status` - Get index status
 /// - `file/didChange` - Notify of file changes
 /// - `shutdown` - Graceful shutdown
@@ -46,14 +49,17 @@ class ScipServer {
   /// Current package indexer.
   PackageIndexer? _indexer;
 
-  /// Current query executor.
-  QueryExecutor? _executor;
+  /// Current SQL index.
+  SqlIndex? _sqlIndex;
+
+  /// Current SQL executor.
+  SqlExecutor? _sqlExecutor;
 
   /// Project root path.
   String? _rootPath;
 
   /// Whether the server is initialized.
-  bool get isInitialized => _indexer != null;
+  bool get isInitialized => _sqlIndex != null;
 
   /// Register a language binding.
   void registerBinding(LanguageBinding binding) {
@@ -73,7 +79,6 @@ class ScipServer {
 
       return JsonRpcResponse(id: request.id, result: result);
     } on JsonRpcError catch (e) {
-      // Preserve specific error codes
       if (request.isNotification) return null;
       return JsonRpcResponse(id: request.id, error: e);
     } catch (e) {
@@ -98,8 +103,11 @@ class ScipServer {
       case ScipMethod.shutdown:
         return _handleShutdown();
 
-      case ScipMethod.query:
-        return _handleQuery(params as Map<String, dynamic>);
+      case ScipMethod.sql:
+        return _handleSql(params as Map<String, dynamic>);
+
+      case ScipMethod.schema:
+        return _handleSchema();
 
       case ScipMethod.status:
         return _handleStatus();
@@ -149,15 +157,20 @@ class ScipServer {
         useCache: initParams.useCache,
       );
 
-      // Create query executor
-      _executor = QueryExecutor(_indexer!.index);
+      // Build SQL index from SCIP data
+      _sqlIndex = SqlIndex.inMemory();
+      final converter = ScipToSql(_sqlIndex!);
+      converter.loadFromScipIndex(_indexer!.index);
 
-      final stats = _indexer!.index.stats;
+      // Create SQL executor
+      _sqlExecutor = SqlExecutor(_sqlIndex!);
+
+      final stats = _sqlIndex!.stats;
 
       return InitializeResult(
         success: true,
         projectName: _rootPath!.split('/').last,
-        fileCount: stats['files'] ?? 0,
+        fileCount: _indexer!.index.files.length,
         symbolCount: stats['symbols'] ?? 0,
       ).toJson();
     } catch (e) {
@@ -174,41 +187,92 @@ class ScipServer {
   /// Handle shutdown request.
   Future<Map<String, dynamic>> _handleShutdown() async {
     await _indexer?.dispose();
+    _sqlIndex?.dispose();
     _indexer = null;
-    _executor = null;
+    _sqlIndex = null;
+    _sqlExecutor = null;
     _activeBinding = null;
     _rootPath = null;
 
     return {'success': true};
   }
 
-  /// Handle query request.
-  Future<Map<String, dynamic>> _handleQuery(
+  /// Handle SQL query request.
+  Future<Map<String, dynamic>> _handleSql(
     Map<String, dynamic> params,
   ) async {
     if (!isInitialized) {
-      return QueryResponse(
+      return SqlResponse(
         success: false,
         error: 'Server not initialized. Call initialize first.',
       ).toJson();
     }
 
-    final queryParams = QueryParams.fromJson(params);
+    final sqlParams = SqlParams.fromJson(params);
 
     try {
-      final result = await _executor!.execute(queryParams.query);
+      final result = _sqlExecutor!.execute(sqlParams.sql, sqlParams.parameters);
 
-      if (queryParams.format == 'json') {
-        return QueryResponse(success: true, result: result.toJson()).toJson();
+      if (sqlParams.format == 'json') {
+        return SqlResponse(success: true, result: result.toMap()).toJson();
       } else {
-        return QueryResponse(success: true, result: result.toText()).toJson();
+        return SqlResponse(success: true, result: result.toText()).toJson();
       }
-    } on FormatException catch (e) {
-      return QueryResponse(success: false, error: 'Invalid query: ${e.message}')
-          .toJson();
+    } on SqlExecutionError catch (e) {
+      return SqlResponse(success: false, error: e.message).toJson();
     } catch (e) {
-      return QueryResponse(success: false, error: 'Query failed: $e').toJson();
+      return SqlResponse(success: false, error: 'SQL failed: $e').toJson();
     }
+  }
+
+  /// Handle schema request.
+  Future<Map<String, dynamic>> _handleSchema() async {
+    return {
+      'success': true,
+      'schema': _sqlIndex?.schema ?? _getDefaultSchema(),
+    };
+  }
+
+  String _getDefaultSchema() {
+    return '''
+-- Symbol definitions
+CREATE TABLE symbols (
+  scip_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  file TEXT,
+  line INTEGER,
+  column_num INTEGER,
+  package TEXT,
+  version TEXT,
+  container_id TEXT,
+  display_name TEXT,
+  documentation TEXT,
+  language TEXT
+);
+
+-- Symbol occurrences (definitions and references)
+CREATE TABLE occurrences (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol_id TEXT NOT NULL,
+  file TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  column_num INTEGER NOT NULL,
+  end_line INTEGER,
+  end_column INTEGER,
+  is_definition INTEGER NOT NULL DEFAULT 0,
+  enclosing_end_line INTEGER,
+  FOREIGN KEY (symbol_id) REFERENCES symbols(scip_id)
+);
+
+-- Symbol relationships (hierarchy, calls, etc.)
+CREATE TABLE relationships (
+  from_symbol TEXT NOT NULL,
+  to_symbol TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  PRIMARY KEY (from_symbol, to_symbol, kind)
+);
+''';
   }
 
   /// Handle status request.
@@ -217,15 +281,16 @@ class ScipServer {
       return StatusResult(initialized: false).toJson();
     }
 
-    final stats = _indexer!.index.stats;
+    final stats = _sqlIndex!.stats;
 
     return StatusResult(
       initialized: true,
       languageId: _activeBinding?.languageId,
       projectName: _rootPath?.split('/').last,
-      fileCount: stats['files'],
+      fileCount: _indexer!.index.files.length,
       symbolCount: stats['symbols'],
-      referenceCount: stats['references'],
+      occurrenceCount: stats['occurrences'],
+      relationshipCount: stats['relationships'],
     ).toJson();
   }
 
@@ -241,6 +306,10 @@ class ScipServer {
 
     try {
       await _indexer!.updateFile(fileParams.path);
+
+      // Rebuild SQL index
+      _rebuildSqlIndex();
+
       return {'success': true};
     } catch (e) {
       return {'success': false, 'error': e.toString()};
@@ -259,10 +328,27 @@ class ScipServer {
 
     try {
       await _indexer!.removeFile(fileParams.path);
+
+      // Rebuild SQL index
+      _rebuildSqlIndex();
+
       return {'success': true};
     } catch (e) {
       return {'success': false, 'error': e.toString()};
     }
+  }
+
+  /// Rebuild the SQL index from current SCIP data.
+  void _rebuildSqlIndex() {
+    if (_sqlIndex == null || _indexer == null) return;
+
+    // Clear and rebuild
+    _sqlIndex!.execute('DELETE FROM relationships');
+    _sqlIndex!.execute('DELETE FROM occurrences');
+    _sqlIndex!.execute('DELETE FROM symbols');
+
+    final converter = ScipToSql(_sqlIndex!);
+    converter.loadFromScipIndex(_indexer!.index);
   }
 
   /// Handle list packages request.
@@ -363,4 +449,3 @@ class ScipServer {
     return server;
   }
 }
-

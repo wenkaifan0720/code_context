@@ -6,7 +6,6 @@ import 'cache/cache_paths.dart';
 import 'incremental_indexer.dart';
 import 'package_discovery.dart';
 import 'package_registry.dart';
-import 'package_registry_provider.dart';
 
 /// Dart language binding for scip_server.
 ///
@@ -28,9 +27,13 @@ import 'package_registry_provider.dart';
 /// // Load dependencies for cross-package queries
 /// await context.loadDependencies();
 ///
-/// // Query with full cross-package support
-/// final executor = QueryExecutor(context.index, provider: context.provider);
-/// final result = await executor.execute('hierarchy MyWidget');
+/// // Build SQL database for queries
+/// final db = SqlIndex.inMemory();
+/// final converter = ScipToSql(db);
+/// converter.loadFromScipIndex(context.index);
+/// for (final ext in context.allExternalIndexes) {
+///   converter.loadFromScipIndex(ext);
+/// }
 ///
 /// await context.dispose();
 /// ```
@@ -102,7 +105,7 @@ class DartBinding implements scip_server.LanguageBinding {
 /// Provides full Dart functionality including:
 /// - Multi-package support (monorepos, workspaces)
 /// - Dependency loading (SDK, Flutter, pub packages)
-/// - Cross-package query support via [provider]
+/// - Cross-package query support via [allExternalIndexes]
 class DartLanguageContext implements scip_server.LanguageContext {
   DartLanguageContext._({
     required this.rootPath,
@@ -190,7 +193,26 @@ class DartLanguageContext implements scip_server.LanguageContext {
   scip_server.ScipIndex get projectIndex => _registry.projectIndex;
 
   @override
-  scip_server.IndexProvider? get provider => PackageRegistryProvider(_registry);
+  Iterable<scip_server.ScipIndex> get allExternalIndexes sync* {
+    // SDK index
+    final sdk = _registry.sdkIndex;
+    if (sdk != null) yield sdk;
+
+    // Flutter packages
+    for (final pkg in _registry.flutterPackages.values) {
+      yield pkg.index;
+    }
+
+    // Hosted packages
+    for (final pkg in _registry.hostedPackages.values) {
+      yield pkg.index;
+    }
+
+    // Git packages
+    for (final pkg in _registry.gitPackages.values) {
+      yield pkg.index;
+    }
+  }
 
   @override
   Stream<scip_server.IndexUpdate> get updates {

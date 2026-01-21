@@ -1,0 +1,10 @@
+# Dart test configuration
+# Explicitly list test directories to avoid fixtures
+
+paths:
+  - test/binding/
+  - test/index/
+  - test/mcp/
+  - test/scip_server/
+  - test/sql/
+  - test/utils/

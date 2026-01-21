@@ -1,6 +1,6 @@
-/// Language-agnostic semantic code intelligence.
+/// Language-agnostic semantic code intelligence with SQL queries.
 ///
-/// Query your codebase with a simple DSL:
+/// Query your codebase with SQL:
 /// ```dart
 /// // Auto-detect language from project files
 /// final context = await CodeContext.open('/path/to/project');
@@ -11,18 +11,29 @@
 ///   binding: DartBinding(),
 /// );
 ///
-/// // Find definition
-/// final result = await context.query('def AuthRepository');
+/// // Find all classes
+/// final result = context.sql("SELECT * FROM symbols WHERE kind = 'class'");
 ///
-/// // Find references
-/// final refs = await context.query('refs login');
+/// // Find symbol definition
+/// final result = context.sql('''
+///   SELECT s.name, o.file, o.line
+///   FROM symbols s
+///   JOIN occurrences o ON s.scip_id = o.symbol_id
+///   WHERE s.name = 'AuthRepository' AND o.is_definition = 1
+/// ''');
 ///
 /// // Load dependencies for cross-package queries
 /// await context.loadDependencies();
 ///
-/// // Query with full dependency support
-/// final hierarchy = await context.query('hierarchy MyWidget');
+/// // Query across packages
+/// final result = context.sql("SELECT * FROM symbols WHERE name GLOB '*Widget*'");
 /// ```
+///
+/// ## SQL Schema
+///
+/// - `symbols` - Symbol definitions (classes, methods, functions, etc.)
+/// - `occurrences` - Where symbols are defined and referenced
+/// - `relationships` - Type hierarchy and call graph
 ///
 /// ## Supported Languages
 ///
@@ -48,36 +59,14 @@ export 'package:scip_server/scip_server.dart'
         ScipIndex,
         SymbolInfo,
         OccurrenceInfo,
-        GrepMatchInfo,
-        IndexProvider,
-        ReferenceWithSource,
-        // Query engine
-        QueryExecutor,
-        ScipQuery,
-        QueryAction,
-        ParsedPattern,
-        PatternType,
-        // Result types
-        QueryResult,
-        DefinitionResult,
-        DefinitionMatch,
-        ReferencesResult,
-        ReferenceMatch,
-        AggregatedReferencesResult,
-        SymbolReferences,
-        MembersResult,
-        HierarchyResult,
-        SearchResult,
-        SourceResult,
-        SignatureResult,
-        CallGraphResult,
-        ImportsResult,
-        FilesResult,
-        FileSymbolsResult,
-        StatsResult,
-        PipelineResult,
-        NotFoundResult,
-        ErrorResult,
+        RelationshipInfo,
+        GrepMatchData,
+        // SQL types
+        SqlIndex,
+        SqlExecutor,
+        SqlResult,
+        SqlExecutionError,
+        ScipToSql,
         // Language binding
         LanguageBinding,
         LanguageContext,
@@ -94,9 +83,10 @@ export 'package:scip_server/scip_server.dart'
         JsonRpcRequest,
         JsonRpcResponse,
         JsonRpcError,
-        QueryResponse,
-        QueryParams,
+        SqlResponse,
+        SqlParams,
         InitializeParams,
+        InitializeResult,
         FileChangeParams,
         StatusResult;
 
@@ -120,8 +110,6 @@ export 'package:dart_binding/dart_binding.dart'
         IncrementalIndexUpdate,
         // Package management
         PackageRegistry,
-        PackageRegistryProvider,
-        PackageRegistryProviderExtension,
         LocalPackageIndex,
         ExternalPackageIndex,
         ExternalPackageType,
@@ -143,6 +131,7 @@ export 'package:dart_binding/dart_binding.dart'
         ResolvedPackage,
         parsePackageConfig,
         parsePackageConfigSync,
+        parsePubspecLock,
         dartContextVersion,
         manifestVersion;
 
@@ -153,9 +142,11 @@ export 'package:dart_binding/dart_binding.dart'
 // This package is structured as follows:
 //
 // packages/
-// ├── scip_server/              # Language-agnostic SCIP query engine
-// │   ├── ScipIndex             # In-memory SCIP index
-// │   ├── QueryExecutor         # DSL query execution
+// ├── scip_server/              # Language-agnostic SCIP query engine with SQL
+// │   ├── ScipIndex             # In-memory SCIP protobuf representation
+// │   ├── SqlIndex              # SQLite database for queries
+// │   ├── ScipToSql             # SCIP → SQL converter
+// │   ├── SqlExecutor           # SQL query execution
 // │   ├── LanguageBinding       # Interface for language implementations
 // │   ├── LanguageContext       # Abstract context interface
 // │   └── ScipServer            # JSON-RPC protocol server
@@ -168,5 +159,5 @@ export 'package:dart_binding/dart_binding.dart'
 //     └── PackageDiscovery      # Pubspec.yaml discovery
 //
 // The root package (code_context) provides:
-// - CodeContext: High-level API using LanguageBinding
+// - CodeContext: High-level API using LanguageBinding + SQL
 // - MCP server integration

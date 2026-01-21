@@ -18,6 +18,9 @@ void main(List<String> arguments) async {
       case 'list-packages':
         await _listPackages(arguments.skip(1).toList());
         return;
+      case 'schema':
+        _printSchema();
+        return;
     }
 
     // Dart-specific commands (dart: prefix)
@@ -47,7 +50,6 @@ void main(List<String> arguments) async {
           exit(1);
       }
     }
-
   }
 
   final parser = ArgParser()
@@ -73,7 +75,7 @@ void main(List<String> arguments) async {
     ..addFlag(
       'interactive',
       abbr: 'i',
-      help: 'Run in interactive REPL mode',
+      help: 'Run in interactive SQL REPL mode',
       defaultsTo: false,
     )
     ..addFlag(
@@ -83,7 +85,7 @@ void main(List<String> arguments) async {
     )
     ..addFlag(
       'with-deps',
-      help: 'Load pre-indexed dependencies for cross-package queries (Dart)',
+      help: 'Load pre-indexed dependencies for cross-package queries',
       defaultsTo: false,
     )
     ..addFlag(
@@ -114,8 +116,7 @@ void main(List<String> arguments) async {
   final noCache = args['no-cache'] as bool;
   final withDeps = args['with-deps'] as bool;
 
-  // For Dart projects, use CodeContext with DartBinding
-  // For other languages, use CodeContext
+  // Check for supported project
   final isDartProject = await File('$projectPath/pubspec.yaml').exists() ||
       (await PackageDiscovery().discoverPackages(projectPath))
           .packages
@@ -160,17 +161,21 @@ void main(List<String> arguments) async {
     if (interactive) {
       await _runInteractive(context, format);
     } else if (watch) {
-      // Watch mode: show updates and optionally re-run query
-      final query = args.rest.isNotEmpty ? args.rest.join(' ') : null;
-      await _runWatch(context, format, query);
+      final sql = args.rest.isNotEmpty ? args.rest.join(' ') : null;
+      await _runWatch(context, format, sql);
     } else if (args.rest.isEmpty) {
       // No query provided, show stats
-      final result = await context.query('stats');
-      _printResult(result, format);
+      final stats = context.stats;
+      stdout.writeln('Index Statistics:');
+      stdout.writeln('  Files: ${stats['files']}');
+      stdout.writeln('  Symbols: ${stats['symbols']}');
+      stdout.writeln('  Occurrences: ${stats['occurrences']}');
+      stdout.writeln('  Relationships: ${stats['relationships']}');
+      stdout.writeln('  Packages: ${stats['packages']}');
     } else {
-      // Execute the query from command line
-      final query = args.rest.join(' ');
-      final result = await context.query(query);
+      // Execute the SQL query from command line
+      final sql = args.rest.join(' ');
+      final result = context.sql(sql);
       _printResult(result, format);
     }
   } catch (e, st) {
@@ -185,9 +190,9 @@ void main(List<String> arguments) async {
 }
 
 void _printUsage(ArgParser parser) {
-  stdout.writeln('code_context - Language-agnostic semantic code intelligence');
+  stdout.writeln('code_context - Semantic code intelligence with SQL queries');
   stdout.writeln('');
-  stdout.writeln('Usage: code_context [options] <query>');
+  stdout.writeln('Usage: code_context [options] <sql-query>');
   stdout.writeln('       code_context <subcommand> [args]');
   stdout.writeln('');
   stdout.writeln('Options:');
@@ -195,6 +200,7 @@ void _printUsage(ArgParser parser) {
   stdout.writeln('');
   stdout.writeln('Subcommands:');
   stdout.writeln('  list-packages [path]   List discovered packages');
+  stdout.writeln('  schema                 Show SQL schema');
   stdout.writeln('');
   stdout.writeln('Dart-specific commands:');
   stdout.writeln('  dart:index-sdk <path>  Pre-index the Dart SDK');
@@ -202,73 +208,109 @@ void _printUsage(ArgParser parser) {
   stdout.writeln('  dart:index-deps        Pre-index pub dependencies');
   stdout.writeln('  dart:list-indexes      List available Dart indexes');
   stdout.writeln('');
-  stdout.writeln('Query DSL:');
-  stdout.writeln('  def <symbol>           Find definition');
-  stdout.writeln('  refs <symbol>          Find references');
-  stdout.writeln('  sig <symbol>           Get signature (without body)');
-  stdout.writeln('  source <symbol>        Get full source code');
-  stdout.writeln('  members <symbol>       Get class members');
-  stdout.writeln('  impls <symbol>         Find implementations');
-  stdout.writeln('  supertypes <symbol>    Get supertypes');
-  stdout.writeln('  subtypes <symbol>      Get subtypes');
-  stdout.writeln('  hierarchy <symbol>     Full hierarchy');
-  stdout.writeln('  calls <symbol>         What does symbol call?');
-  stdout.writeln('  callers <symbol>       What calls symbol?');
-  stdout.writeln('  deps <symbol>          Dependencies of symbol');
-  stdout.writeln('  find <pattern>         Search symbols');
-  stdout.writeln('  which <symbol>         Show all matches (disambiguation)');
-  stdout.writeln('  grep <pattern>         Search source code');
-  stdout.writeln('  imports <file>         File imports');
-  stdout.writeln('  exports <path>         File/directory exports');
-  stdout.writeln('  files                  List indexed files');
-  stdout.writeln('  stats                  Index statistics');
-  stdout.writeln('');
-  stdout.writeln('Filters:');
+  stdout.writeln('SQL Schema:');
   stdout.writeln(
-      '  kind:<kind>            Filter by kind (class, method, function, etc.)');
-  stdout.writeln('  in:<path>              Filter by file path prefix');
-  stdout.writeln('  lang:<language>        Filter by language (dart, etc.)');
-  stdout.writeln('');
-  stdout.writeln('Grep Flags:');
-  stdout.writeln('  -i  Case insensitive     -c  Count per file');
-  stdout.writeln('  -l  Files with matches   -L  Files without matches');
-  stdout.writeln('  -o  Only matching text   -w  Word boundary');
-  stdout.writeln('  -v  Invert match         -F  Fixed strings (literal)');
-  stdout.writeln('  -D  Search dependencies  (with --with-deps)');
-  stdout.writeln('  -C:n Context lines       -A:n/-B:n After/before lines');
-  stdout.writeln('  --include:glob  Only search matching files');
-  stdout.writeln('  --exclude:glob  Skip matching files');
-  stdout.writeln('');
-  stdout.writeln('Pipe Queries:');
-  stdout.writeln('  find Auth* | members     Chain queries with |');
-  stdout.writeln('  grep TODO | refs         Process results through pipes');
-  stdout.writeln('');
-  stdout.writeln('Examples:');
-  stdout.writeln('  code_context def AuthRepository');
-  stdout.writeln('  code_context refs login');
-  stdout.writeln('  code_context "find Auth* kind:class"');
-  stdout.writeln('  code_context "grep TODO -c"');
-  stdout.writeln('  code_context "grep /TODO|FIXME/ -l"');
-  stdout.writeln('  code_context "find *Service | members"');
-  stdout.writeln('  code_context -i                    # Interactive mode');
-  stdout.writeln('  code_context -w                    # Watch mode');
+      '  symbols      - Symbol definitions (scip_id, name, kind, file, line, ...)');
   stdout.writeln(
-      '  code_context -w "find * kind:class" # Watch + re-run on changes');
+      '  occurrences  - References and definitions (symbol_id, file, line, is_definition, ...)');
+  stdout.writeln(
+      '  relationships - Hierarchy and calls (from_symbol, to_symbol, kind)');
   stdout.writeln('');
-  stdout.writeln('Dart: Pre-indexing dependencies (for cross-package queries):');
-  stdout.writeln('  code_context dart:index-sdk /path/to/dart-sdk');
-  stdout.writeln('  code_context dart:index-deps');
-  stdout.writeln('  code_context --with-deps "hierarchy MyClass"');
+  stdout.writeln('Example Queries:');
+  stdout
+      .writeln("  code_context \"SELECT * FROM symbols WHERE kind = 'class'\"");
+  stdout.writeln(
+      "  code_context \"SELECT name, file FROM symbols WHERE name GLOB '*Service*'\"");
+  stdout.writeln(
+      '  code_context "SELECT o.file, o.line FROM occurrences o JOIN symbols s ON o.symbol_id = s.scip_id WHERE s.name = \'login\' AND o.is_definition = 0"');
   stdout.writeln('');
-  stdout.writeln('Mono repo / workspace support:');
-  stdout.writeln('  code_context list-packages /path/to/monorepo');
-  stdout.writeln('  code_context -p /path/to/monorepo stats');
+  stdout.writeln('Interactive mode:');
+  stdout.writeln('  code_context -i                # Start SQL REPL');
+  stdout.writeln('');
+  stdout.writeln('Cross-package queries:');
+  stdout.writeln('  code_context dart:index-deps   # Index dependencies first');
+  stdout.writeln(
+      '  code_context --with-deps "SELECT * FROM symbols WHERE name = \'StatelessWidget\'"');
 }
 
-void _printResult(QueryResult result, String format) {
+void _printSchema() {
+  stdout.writeln('''
+## SQL Schema
+
+### symbols
+| Column | Type | Description |
+|--------|------|-------------|
+| scip_id | TEXT PRIMARY KEY | SCIP symbol identifier |
+| name | TEXT | Symbol name |
+| kind | TEXT | class, method, function, field, enum, etc. |
+| file | TEXT | Relative file path (NULL for external) |
+| line | INTEGER | Definition line (0-indexed) |
+| column_num | INTEGER | Definition column |
+| package | TEXT | Package name |
+| version | TEXT | Package version |
+| container_id | TEXT | Parent symbol SCIP ID |
+| display_name | TEXT | Human-readable name |
+| documentation | TEXT | Doc comments |
+| language | TEXT | Language identifier |
+
+### occurrences
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PRIMARY KEY | Auto-increment ID |
+| symbol_id | TEXT | References symbols.scip_id |
+| file | TEXT | File path |
+| line | INTEGER | Line number (0-indexed) |
+| column_num | INTEGER | Column number |
+| end_line | INTEGER | End line |
+| end_column | INTEGER | End column |
+| is_definition | INTEGER | 1 if definition, 0 if reference |
+| enclosing_end_line | INTEGER | End of enclosing scope |
+
+### relationships
+| Column | Type | Description |
+|--------|------|-------------|
+| from_symbol | TEXT | Source symbol |
+| to_symbol | TEXT | Target symbol |
+| kind | TEXT | implements, calls, type_definition, references |
+
+## Common Queries
+
+```sql
+-- Find all classes
+SELECT name, file, line FROM symbols WHERE kind = 'class';
+
+-- Find symbol definition
+SELECT s.name, o.file, o.line 
+FROM symbols s 
+JOIN occurrences o ON s.scip_id = o.symbol_id 
+WHERE s.name = 'MyClass' AND o.is_definition = 1;
+
+-- Find all references
+SELECT o.file, o.line, o.column_num 
+FROM occurrences o 
+JOIN symbols s ON o.symbol_id = s.scip_id 
+WHERE s.name = 'login' AND o.is_definition = 0;
+
+-- Get class members
+SELECT * FROM symbols 
+WHERE container_id = (SELECT scip_id FROM symbols WHERE name = 'MyClass' LIMIT 1);
+
+-- Find callers of a function
+SELECT s.name, s.kind, s.file 
+FROM relationships r 
+JOIN symbols s ON r.from_symbol = s.scip_id 
+WHERE r.to_symbol IN (SELECT scip_id FROM symbols WHERE name = 'login')
+  AND r.kind = 'calls';
+
+-- Pattern matching
+SELECT name, kind FROM symbols WHERE name GLOB '*Service*';
+```
+''');
+}
+
+void _printResult(SqlResult result, String format) {
   if (format == 'json') {
-    stdout
-        .writeln(const JsonEncoder.withIndent('  ').convert(result.toJson()));
+    stdout.writeln(result.toJson(pretty: true));
   } else {
     stdout.writeln(result.toText());
   }
@@ -286,11 +328,11 @@ PackageRegistry? _getRegistry(CodeContext context) {
 Future<void> _runWatch(
   CodeContext context,
   String format,
-  String? query,
+  String? sql,
 ) async {
   // Run initial query if provided
-  if (query != null) {
-    final result = await context.query(query);
+  if (sql != null) {
+    final result = context.sql(sql);
     _printResult(result, format);
     stdout.writeln('');
   }
@@ -300,7 +342,6 @@ Future<void> _runWatch(
 
   final completer = Completer<void>();
 
-  // Handle Ctrl+C
   late StreamSubscription<ProcessSignal> sigintSubscription;
   sigintSubscription = ProcessSignal.sigint.watch().listen((_) {
     stderr.writeln('');
@@ -309,25 +350,24 @@ Future<void> _runWatch(
     completer.complete();
   });
 
-  // Watch for file updates
   final subscription = context.updates.listen((update) async {
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
 
     if (update is FileUpdatedUpdate) {
       stderr.writeln('[$timestamp] Updated: ${update.path}');
+      context.rebuildSqlIndex();
 
-      // Re-run query if provided
-      if (query != null) {
-        final result = await context.query(query);
+      if (sql != null) {
+        final result = context.sql(sql);
         stdout.writeln('');
         _printResult(result, format);
       }
     } else if (update is FileRemovedUpdate) {
       stderr.writeln('[$timestamp] Removed: ${update.path}');
+      context.rebuildSqlIndex();
 
-      // Re-run query if provided
-      if (query != null) {
-        final result = await context.query(query);
+      if (sql != null) {
+        final result = context.sql(sql);
         stdout.writeln('');
         _printResult(result, format);
       }
@@ -347,92 +387,63 @@ Future<void> _runWatch(
 
 Future<void> _runInteractive(CodeContext context, String format) async {
   stdout.writeln('');
-  stdout.writeln('Interactive mode. Type "help" for commands, "quit" to exit.');
+  stdout.writeln('SQL REPL mode. Commands:');
+  stdout.writeln('  .schema    Show table schema');
+  stdout.writeln('  .tables    List tables');
+  stdout.writeln('  .stats     Show index statistics');
+  stdout.writeln('  .refresh   Refresh index from source files');
+  stdout.writeln('  .quit      Exit');
   stdout.writeln('');
 
-  // Watch for file updates
   final subscription = context.updates.listen((update) {
     stderr.writeln('  [update] $update');
   });
 
   try {
     while (true) {
-      stdout.write('> ');
+      stdout.write('sql> ');
       final line = stdin.readLineSync();
 
-      if (line == null || line == 'quit' || line == 'exit') {
+      if (line == null || line == '.quit' || line == '.exit') {
         break;
       }
 
       if (line.isEmpty) continue;
 
-      if (line == 'help') {
-        stdout.writeln('Query Commands:');
-        stdout.writeln('  def <symbol>          Find definition');
-        stdout.writeln('  refs <symbol>         Find references');
-        stdout.writeln('  sig <symbol>          Get signature (without body)');
-        stdout.writeln('  source <symbol>       Get full source code');
-        stdout.writeln('  members <symbol>      Get class members');
-        stdout.writeln('  impls <symbol>        Find implementations');
-        stdout.writeln('  supertypes <symbol>   Get supertypes');
-        stdout.writeln('  subtypes <symbol>     Get subtypes');
-        stdout.writeln('  hierarchy <symbol>    Full hierarchy (super + sub)');
-        stdout.writeln('  calls <symbol>        What does it call?');
-        stdout.writeln('  callers <symbol>      What calls it?');
-        stdout.writeln('  deps <symbol>         Dependencies of a symbol');
-        stdout.writeln('  find <pattern>        Search symbols');
-        stdout.writeln(
-            '  which <symbol>        Show all matches (disambiguation)');
-        stdout.writeln('  grep <pattern>        Search in source code');
-        stdout.writeln('  imports <file>        What does this file import?');
-        stdout.writeln('  exports <path>        What does this path export?');
-        stdout.writeln('');
-        stdout.writeln('Pattern Syntax:');
-        stdout.writeln('  Auth*                 Glob wildcard matching');
-        stdout.writeln('  /TODO|FIXME/          Regex pattern');
-        stdout.writeln('  /error/i              Case-insensitive regex');
-        stdout.writeln('  ~authentcate          Fuzzy (typo-tolerant)');
-        stdout.writeln(
-            '  Class.method          Qualified name (disambiguation)');
-        stdout.writeln('');
-        stdout.writeln('Filters (for find/grep):');
-        stdout.writeln('  kind:class            Filter by kind');
-        stdout.writeln('  in:lib/auth/          Filter by path');
-        stdout.writeln('');
-        stdout.writeln('Grep Flags:');
-        stdout.writeln('  -i                    Case insensitive');
-        stdout.writeln('  -c                    Count matches per file');
-        stdout.writeln('  -l                    List files with matches');
-        stdout.writeln('  -L                    List files without matches');
-        stdout.writeln('  -o                    Show only matching text');
-        stdout.writeln('  -w                    Word boundary matching');
-        stdout.writeln('  -v                    Invert match');
-        stdout.writeln('  -D                    Search external dependencies');
-        stdout.writeln(
-            '  -C:3                  Context lines (before + after)');
-        stdout.writeln('  -A:5 -B:2             Lines after / before');
-        stdout.writeln('');
-        stdout.writeln('Pipe Queries:');
-        stdout.writeln('  find Auth* | members  Chain queries with |');
-        stdout.writeln('  grep TODO | refs      Process results through pipes');
-        stdout.writeln('');
-        stdout.writeln('Utility:');
-        stdout.writeln('  files                 List indexed files');
-        stdout.writeln('  stats                 Index statistics');
-        stdout.writeln('  refresh               Refresh all files');
-        stdout.writeln('  quit                  Exit');
-        continue;
+      // Handle special commands
+      if (line.startsWith('.')) {
+        switch (line) {
+          case '.schema':
+            _printSchema();
+            continue;
+          case '.tables':
+            stdout.writeln('Tables: symbols, occurrences, relationships');
+            continue;
+          case '.stats':
+            final stats = context.stats;
+            stdout.writeln('Symbols: ${stats['symbols']}');
+            stdout.writeln('Occurrences: ${stats['occurrences']}');
+            stdout.writeln('Relationships: ${stats['relationships']}');
+            continue;
+          case '.refresh':
+            stderr.writeln('Refreshing...');
+            await context.refreshAll();
+            context.rebuildSqlIndex();
+            stderr
+                .writeln('Done. ${context.stats['symbols']} symbols indexed.');
+            continue;
+          default:
+            stderr.writeln('Unknown command: $line');
+            continue;
+        }
       }
 
-      if (line == 'refresh') {
-        stderr.writeln('Refreshing...');
-        await context.refreshAll();
-        stderr.writeln('Done. ${context.stats['symbols']} symbols indexed.');
-        continue;
+      try {
+        final result = context.sql(line);
+        _printResult(result, format);
+      } catch (e) {
+        stderr.writeln('Error: $e');
       }
-
-      final result = await context.query(line);
-      _printResult(result, format);
       stdout.writeln('');
     }
   } finally {
@@ -446,7 +457,6 @@ Future<void> _runInteractive(CodeContext context, String format) async {
 // Dart-specific commands (dart: prefix)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Index the Dart/Flutter SDK for cross-package queries.
 Future<void> _dartIndexSdk(List<String> args) async {
   if (args.isEmpty) {
     stderr.writeln('Usage: code_context dart:index-sdk <sdk-path>');
@@ -454,8 +464,6 @@ Future<void> _dartIndexSdk(List<String> args) async {
     stderr.writeln('Example:');
     stderr.writeln(
         '  code_context dart:index-sdk /opt/flutter/bin/cache/dart-sdk');
-    stderr.writeln(
-        '  code_context dart:index-sdk \$(dirname \$(which dart))/..');
     exit(1);
   }
 
@@ -467,7 +475,6 @@ Future<void> _dartIndexSdk(List<String> args) async {
     exit(1);
   }
 
-  // Check for version file
   final versionFile = File('$sdkPath/version');
   if (!await versionFile.exists()) {
     stderr.writeln('Error: Not a valid Dart SDK (no version file found)');
@@ -476,10 +483,7 @@ Future<void> _dartIndexSdk(List<String> args) async {
 
   final version = (await versionFile.readAsString()).trim();
   stderr.writeln('Indexing Dart SDK $version...');
-  stderr.writeln('This may take a few minutes.');
-  stderr.writeln('');
 
-  // Create a temporary registry
   final registry = PackageRegistry(rootPath: sdkPath);
   final builder = ExternalIndexBuilder(registry: registry);
 
@@ -488,7 +492,7 @@ Future<void> _dartIndexSdk(List<String> args) async {
   stopwatch.stop();
 
   if (result.success) {
-    stdout.writeln('✓ SDK indexed successfully');
+    stdout.writeln('SDK indexed successfully');
     stdout.writeln('  Version: ${result.stats?['version']}');
     stdout.writeln('  Symbols: ${result.stats?['symbols']}');
     stdout.writeln('  Files: ${result.stats?['files']}');
@@ -496,26 +500,22 @@ Future<void> _dartIndexSdk(List<String> args) async {
     stdout.writeln('');
     stdout.writeln('Index saved to: ${CachePaths.sdkDir(version)}');
   } else {
-    stderr.writeln('✗ Failed to index SDK: ${result.error}');
+    stderr.writeln('Failed to index SDK: ${result.error}');
     exit(1);
   }
 }
 
-/// Index the Flutter framework packages.
 Future<void> _dartIndexFlutter(List<String> args) async {
-  // Default to FLUTTER_ROOT env var or common paths
   String? flutterPath;
   if (args.isNotEmpty) {
     flutterPath = args.first;
   } else {
     flutterPath = Platform.environment['FLUTTER_ROOT'];
     if (flutterPath == null) {
-      // Try to find Flutter from the flutter command
       try {
         final result = await Process.run('which', ['flutter']);
         if (result.exitCode == 0) {
           final flutterBin = result.stdout.toString().trim();
-          // Flutter binary is at FLUTTER_ROOT/bin/flutter
           flutterPath = Directory(flutterBin).parent.parent.path;
         }
       } catch (_) {}
@@ -525,13 +525,7 @@ Future<void> _dartIndexFlutter(List<String> args) async {
   if (flutterPath == null || !await Directory(flutterPath).exists()) {
     stderr.writeln('Usage: code_context dart:index-flutter [flutter-path]');
     stderr.writeln('');
-    stderr.writeln(
-        'If no path is provided, uses FLUTTER_ROOT environment variable');
-    stderr.writeln('or tries to find Flutter from PATH.');
-    stderr.writeln('');
-    stderr.writeln('Example:');
-    stderr.writeln('  code_context dart:index-flutter');
-    stderr.writeln('  code_context dart:index-flutter /opt/flutter');
+    stderr.writeln('If no path is provided, uses FLUTTER_ROOT or PATH.');
     exit(1);
   }
 
@@ -541,17 +535,28 @@ Future<void> _dartIndexFlutter(List<String> args) async {
     exit(1);
   }
 
-  // Get Flutter version
-  final versionFile = File('$flutterPath/version');
-  final version = await versionFile.exists()
-      ? (await versionFile.readAsString()).trim()
-      : 'unknown';
+  // Get Flutter version using flutter --version --machine
+  String version = 'unknown';
+  try {
+    final result = await Process.run(
+      '$flutterPath/bin/flutter',
+      ['--version', '--machine'],
+    );
+    if (result.exitCode == 0) {
+      final json = jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
+      version = json['frameworkVersion'] as String? ?? 'unknown';
+    }
+  } catch (_) {
+    // Fall back to version file
+    final versionFile = File('$flutterPath/version');
+    if (await versionFile.exists()) {
+      version = (await versionFile.readAsString()).trim();
+    }
+  }
 
   stderr.writeln('Indexing Flutter $version packages...');
   stderr.writeln('Path: $flutterPath');
-  stderr.writeln('');
 
-  // List of Flutter packages to index
   final flutterPackages = [
     'flutter',
     'flutter_test',
@@ -574,7 +579,6 @@ Future<void> _dartIndexFlutter(List<String> args) async {
       continue;
     }
 
-    // Check if package_config.json exists, run flutter pub get if not
     final pkgConfigFile = File('$pkgPath/.dart_tool/package_config.json');
     if (!await pkgConfigFile.exists()) {
       stderr.writeln('  Running flutter pub get in $pkgName...');
@@ -584,7 +588,7 @@ Future<void> _dartIndexFlutter(List<String> args) async {
         workingDirectory: pkgPath,
       );
       if (result.exitCode != 0) {
-        stderr.writeln('  ✗ Failed to get dependencies for $pkgName');
+        stderr.writeln('  Failed to get dependencies for $pkgName');
         failCount++;
         continue;
       }
@@ -598,25 +602,24 @@ Future<void> _dartIndexFlutter(List<String> args) async {
     );
 
     if (result.success) {
-      stdout.writeln('✓ (${result.stats?['symbols']} symbols)');
+      stdout.writeln('done (${result.stats?['symbols']} symbols)');
       successCount++;
     } else {
-      stdout.writeln('✗ ${result.error}');
+      stdout.writeln('failed: ${result.error}');
       failCount++;
     }
   }
 
   stopwatch.stop();
   stdout.writeln('');
-  stdout.writeln('Results:');
-  stdout.writeln('  Indexed: $successCount packages');
-  stdout.writeln('  Failed: $failCount packages');
-  stdout.writeln('  Time: ${stopwatch.elapsed.inSeconds}s');
+  stdout.writeln('Indexed: $successCount packages');
+  stdout.writeln('Failed: $failCount packages');
+  stdout.writeln('Time: ${stopwatch.elapsed.inSeconds}s');
   stdout.writeln('');
-  stdout.writeln('Indexes saved to: ${CachePaths.globalCacheDir}/flutter/');
+  stdout.writeln(
+      'Indexes saved to: ${CachePaths.globalCacheDir}/flutter/$version/');
 }
 
-/// Index all pub dependencies for cross-package queries.
 Future<void> _dartIndexDependencies(List<String> args) async {
   final projectPath = args.isNotEmpty ? args.first : '.';
 
@@ -628,10 +631,7 @@ Future<void> _dartIndexDependencies(List<String> args) async {
   }
 
   stderr.writeln('Indexing dependencies from $projectPath...');
-  stderr.writeln('This may take several minutes for large projects.');
-  stderr.writeln('');
 
-  // Create a temporary registry
   final registry = PackageRegistry(rootPath: projectPath);
   final builder = ExternalIndexBuilder(registry: registry);
 
@@ -640,18 +640,17 @@ Future<void> _dartIndexDependencies(List<String> args) async {
   stopwatch.stop();
 
   if (!result.success) {
-    stderr.writeln('✗ Failed: ${result.error}');
+    stderr.writeln('Failed: ${result.error}');
     exit(1);
   }
 
-  stdout.writeln('Results:');
-  stdout.writeln('  Indexed: ${result.indexed}');
-  stdout.writeln('  Skipped (already indexed): ${result.skipped}');
-  stdout.writeln('  Failed: ${result.failed}');
-  stdout.writeln('  Time: ${stopwatch.elapsed.inSeconds}s');
-  stdout.writeln('');
+  stdout.writeln('Indexed: ${result.indexed}');
+  stdout.writeln('Skipped: ${result.skipped}');
+  stdout.writeln('Failed: ${result.failed}');
+  stdout.writeln('Time: ${stopwatch.elapsed.inSeconds}s');
 
   if (result.failed > 0) {
+    stdout.writeln('');
     stdout.writeln('Failed packages:');
     for (final pkg in result.results.where((r) => !r.success && !r.skipped)) {
       stdout.writeln('  - ${pkg.name}-${pkg.version}: ${pkg.error}');
@@ -659,7 +658,6 @@ Future<void> _dartIndexDependencies(List<String> args) async {
   }
 }
 
-/// List available pre-computed indexes (Dart-specific).
 Future<void> _dartListIndexes() async {
   final registry = PackageRegistry(rootPath: '.');
   final builder = ExternalIndexBuilder(registry: registry);
@@ -667,7 +665,6 @@ Future<void> _dartListIndexes() async {
   stdout.writeln('Pre-computed Dart indexes in ${CachePaths.globalCacheDir}:');
   stdout.writeln('');
 
-  // List SDK indexes
   final sdkVersions = await builder.listSdkIndexes();
   stdout.writeln('SDK Indexes:');
   if (sdkVersions.isEmpty) {
@@ -679,7 +676,6 @@ Future<void> _dartListIndexes() async {
   }
   stdout.writeln('');
 
-  // List Flutter indexes
   final flutterDir = Directory('${CachePaths.globalCacheDir}/flutter');
   stdout.writeln('Flutter Indexes:');
   if (await flutterDir.exists()) {
@@ -706,7 +702,6 @@ Future<void> _dartListIndexes() async {
   }
   stdout.writeln('');
 
-  // List package indexes
   final packages = await builder.listPackageIndexes();
   stdout.writeln('Hosted Package Indexes:');
   if (packages.isEmpty) {
@@ -718,7 +713,6 @@ Future<void> _dartListIndexes() async {
   }
   stdout.writeln('');
 
-  // List git indexes
   final gitDir = Directory('${CachePaths.globalCacheDir}/git');
   stdout.writeln('Git Package Indexes:');
   if (await gitDir.exists()) {
@@ -737,18 +731,12 @@ Future<void> _dartListIndexes() async {
   } else {
     stdout.writeln('  (none)');
   }
-  stdout.writeln('');
-
-  stdout.writeln('To index SDK: code_context dart:index-sdk <path>');
-  stdout.writeln('To index Flutter: code_context dart:index-flutter');
-  stdout.writeln('To index deps: code_context dart:index-deps');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic commands
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// List discovered packages in a directory.
 Future<void> _listPackages(List<String> args) async {
   final path = args.isNotEmpty ? args.first : '.';
 
@@ -756,7 +744,6 @@ Future<void> _listPackages(List<String> args) async {
 
   final stopwatch = Stopwatch()..start();
 
-  // Try each registered binding
   for (final binding in CodeContext.registeredBindings) {
     final packages = await binding.discoverPackages(path);
     if (packages.isNotEmpty) {
@@ -769,7 +756,7 @@ Future<void> _listPackages(List<String> args) async {
       for (final pkg in packages) {
         final cacheDir = '${pkg.path}/.${binding.languageId}_context';
         final hasCache = await Directory(cacheDir).exists();
-        final cacheStatus = hasCache ? '✓ indexed' : '○ not indexed';
+        final cacheStatus = hasCache ? 'indexed' : 'not indexed';
         stdout.writeln('  ${pkg.name} ($cacheStatus)');
         stdout.writeln('    Path: ${pkg.path}');
       }
@@ -780,9 +767,4 @@ Future<void> _listPackages(List<String> args) async {
   stopwatch.stop();
   stdout.writeln('');
   stdout.writeln('No packages found in $path');
-  stdout.writeln('');
-  stdout.writeln('Supported languages:');
-  for (final binding in CodeContext.registeredBindings) {
-    stdout.writeln('  - ${binding.languageId} (${binding.packageFile})');
-  }
 }

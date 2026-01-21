@@ -8,12 +8,12 @@ import '../code_context.dart';
 
 /// Mix this in to any MCPServer to add code intelligence via code_context.
 ///
-/// Currently provides Dart code intelligence via `dart_query` and related tools.
-/// Future language support will add additional tools with language prefixes.
+/// Provides SQL-based code intelligence for Dart codebases.
 ///
 /// ## Available Tools
 ///
-/// - `dart_query` - Query Dart codebase with DSL
+/// - `dart_sql` - Execute SQL queries against the code index
+/// - `dart_schema` - Show the SQL schema for reference
 /// - `dart_index_flutter` - Index Flutter SDK packages
 /// - `dart_index_deps` - Index pub dependencies
 /// - `dart_refresh` - Refresh project index
@@ -63,11 +63,10 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
     // Register available language bindings for auto-detection
     CodeContext.registerBinding(DartBinding());
-    // Future: CodeContext.registerBinding(TypeScriptBinding());
-    // Future: CodeContext.registerBinding(PythonBinding());
 
-    // Register Dart-specific tools
-    registerTool(dartQueryTool, _handleDartQuery);
+    // Register tools
+    registerTool(dartSqlTool, _handleDartSql);
+    registerTool(dartSchemaTool, _handleDartSchema);
     registerTool(dartIndexFlutterTool, _handleIndexFlutter);
     registerTool(dartIndexDepsTool, _handleIndexDeps);
     registerTool(dartRefreshTool, _handleRefresh);
@@ -94,13 +93,10 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
       _staleRoots.remove(root);
       log(LoggingLevel.debug, 'Removed context for: $root');
     }
-
-    // Add contexts for new roots (lazily - will be created on first query)
   }
 
   @override
   Future<void> shutdown() async {
-    // Copy to list to avoid concurrent modification
     final contexts = _contexts.values.toList();
     final watchers = _packageConfigWatchers.values.toList();
 
@@ -120,7 +116,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
   /// Get the current Dart SDK version (major.minor.patch only).
   String? _getCurrentSdkVersion() {
-    // Platform.version is like "3.2.0 (stable) ..."
     final versionMatch =
         RegExp(r'^(\d+\.\d+\.\d+)').firstMatch(Platform.version);
     return versionMatch?.group(1);
@@ -128,7 +123,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
   /// Start watching package_config.json for changes.
   void _watchPackageConfig(String rootUri, String rootPath) {
-    // Cancel existing watcher if any
     _packageConfigWatchers[rootUri]?.cancel();
 
     final configPath = '$rootPath/.dart_tool/package_config.json';
@@ -150,10 +144,7 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
       _packageConfigWatchers[rootUri] = watcher;
       log(LoggingLevel.debug, 'Watching package_config.json for $rootPath');
     } catch (e) {
-      log(
-        LoggingLevel.warning,
-        'Could not watch package_config.json: $e',
-      );
+      log(LoggingLevel.warning, 'Could not watch package_config.json: $e');
     }
   }
 
@@ -161,13 +152,10 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
   Future<CodeContext?> _getContextForPath(String filePath) async {
     final currentRoots = await roots;
 
-    // Find the root that contains this file
     for (final root in currentRoots) {
       final rootPath = Uri.parse(root.uri).toFilePath();
       if (filePath.startsWith(rootPath)) {
-        // Check if we already have a context for this root
         if (_contexts.containsKey(root.uri)) {
-          // Warn if stale
           if (_staleRoots.contains(root.uri)) {
             log(
               LoggingLevel.warning,
@@ -177,19 +165,16 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
           return _contexts[root.uri];
         }
 
-        // Create a new context
         try {
           log(LoggingLevel.info, 'Creating CodeContext for: ${root.uri}');
-          // Auto-detect language from project files
           final context = await CodeContext.open(
             rootPath,
             watch: true,
             useCache: useCache,
-            loadDependencies: true, // Always try to load deps
+            loadDependencies: true,
           );
           _contexts[root.uri] = context;
 
-          // Start watching package_config.json
           _watchPackageConfig(root.uri, rootPath);
 
           final registry = _getRegistry(context);
@@ -222,7 +207,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     final rootPath = Uri.parse(firstRoot.uri).toFilePath();
 
     if (_contexts.containsKey(firstRoot.uri)) {
-      // Warn if stale
       if (_staleRoots.contains(firstRoot.uri)) {
         log(
           LoggingLevel.warning,
@@ -234,16 +218,14 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
     try {
       log(LoggingLevel.info, 'Creating CodeContext for: ${firstRoot.uri}');
-      // Auto-detect language from project files
       final context = await CodeContext.open(
         rootPath,
         watch: true,
         useCache: useCache,
-        loadDependencies: true, // Always try to load deps
+        loadDependencies: true,
       );
       _contexts[firstRoot.uri] = context;
 
-      // Start watching package_config.json
       _watchPackageConfig(firstRoot.uri, rootPath);
 
       final reg = _getRegistry(context);
@@ -263,16 +245,18 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     }
   }
 
-  Future<CallToolResult> _handleDartQuery(CallToolRequest request) async {
-    final query = request.arguments?['query'] as String?;
-    if (query == null || query.isEmpty) {
+  Future<CallToolResult> _handleDartSql(CallToolRequest request) async {
+    final sql = request.arguments?['sql'] as String?;
+    if (sql == null || sql.isEmpty) {
       return CallToolResult(
-        content: [TextContent(text: 'Missing required argument `query`.')],
+        content: [TextContent(text: 'Missing required argument `sql`.')],
         isError: true,
       );
     }
 
-    // Get context - use project hint if provided, otherwise use default
+    final format = request.arguments?['format'] as String? ?? 'text';
+
+    // Get context
     final projectHint = request.arguments?['project'] as String?;
     CodeContext? context;
 
@@ -295,36 +279,134 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     }
 
     try {
-      final result = await context.query(query);
+      final result = context.sql(sql);
+      final output = format == 'json' ? result.toJson(pretty: true) : result.toText();
       return CallToolResult(
-        content: [TextContent(text: result.toText())],
+        content: [TextContent(text: output)],
         isError: false,
       );
     } catch (e) {
       return CallToolResult(
-        content: [TextContent(text: 'Query error: $e')],
+        content: [TextContent(text: 'SQL error: $e')],
         isError: true,
       );
     }
+  }
+
+  Future<CallToolResult> _handleDartSchema(CallToolRequest request) async {
+    final projectHint = request.arguments?['project'] as String?;
+    CodeContext? context;
+
+    if (projectHint != null) {
+      context = await _getContextForPath(projectHint);
+    } else {
+      context = await _getDefaultContext();
+    }
+
+    if (context == null) {
+      // Return the schema even without a context (it's always the same)
+      return CallToolResult(
+        content: [
+          TextContent(
+            text: '''
+## SQL Schema
+
+### symbols
+| Column | Type | Description |
+|--------|------|-------------|
+| scip_id | TEXT PRIMARY KEY | SCIP symbol identifier |
+| name | TEXT | Symbol name |
+| kind | TEXT | class, method, function, field, enum, etc. |
+| file | TEXT | Relative file path (NULL for external) |
+| line | INTEGER | Definition line (0-indexed) |
+| column_num | INTEGER | Definition column |
+| package | TEXT | Package name |
+| version | TEXT | Package version |
+| container_id | TEXT | Parent symbol SCIP ID |
+| display_name | TEXT | Human-readable name |
+| documentation | TEXT | Doc comments |
+| language | TEXT | Language identifier |
+
+### occurrences
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PRIMARY KEY | Auto-increment ID |
+| symbol_id | TEXT | References symbols.scip_id |
+| file | TEXT | File path |
+| line | INTEGER | Line number (0-indexed) |
+| column_num | INTEGER | Column number |
+| end_line | INTEGER | End line |
+| end_column | INTEGER | End column |
+| is_definition | INTEGER | 1 if definition, 0 if reference |
+| enclosing_end_line | INTEGER | End of enclosing scope |
+
+### relationships
+| Column | Type | Description |
+|--------|------|-------------|
+| from_symbol | TEXT | Source symbol |
+| to_symbol | TEXT | Target symbol |
+| kind | TEXT | implements, calls, type_definition, references |
+
+## Common Queries
+
+```sql
+-- Find all classes
+SELECT name, file, line FROM symbols WHERE kind = 'class';
+
+-- Find symbol definition
+SELECT s.name, o.file, o.line 
+FROM symbols s 
+JOIN occurrences o ON s.scip_id = o.symbol_id 
+WHERE s.name = 'MyClass' AND o.is_definition = 1;
+
+-- Find all references
+SELECT o.file, o.line, o.column_num 
+FROM occurrences o 
+JOIN symbols s ON o.symbol_id = s.scip_id 
+WHERE s.name = 'login' AND o.is_definition = 0;
+
+-- Get class members
+SELECT * FROM symbols 
+WHERE container_id = (SELECT scip_id FROM symbols WHERE name = 'MyClass' LIMIT 1);
+
+-- Find callers of a function
+SELECT s.name, s.kind, s.file 
+FROM relationships r 
+JOIN symbols s ON r.from_symbol = s.scip_id 
+WHERE r.to_symbol IN (SELECT scip_id FROM symbols WHERE name = 'login')
+  AND r.kind = 'calls';
+
+-- Type hierarchy
+SELECT s.name, r.kind 
+FROM relationships r 
+JOIN symbols s ON r.to_symbol = s.scip_id 
+WHERE r.from_symbol IN (SELECT scip_id FROM symbols WHERE name = 'MyWidget')
+  AND r.kind = 'implements';
+```
+''',
+          ),
+        ],
+        isError: false,
+      );
+    }
+
+    return CallToolResult(
+      content: [TextContent(text: context.schema)],
+      isError: false,
+    );
   }
 
   /// Handle dart_index_flutter tool.
   Future<CallToolResult> _handleIndexFlutter(CallToolRequest request) async {
     final flutterRoot = request.arguments?['flutterRoot'] as String?;
 
-    // Create a temporary registry for building
     final registry = PackageRegistry(rootPath: flutterRoot ?? '.');
     final builder = ExternalIndexBuilder(registry: registry);
-
-    final messages = <String>[];
 
     try {
       final result = await builder.indexFlutterPackages(
         flutterPath: flutterRoot,
-        onProgress: (msg) {
-          log(LoggingLevel.info, msg);
-          messages.add(msg);
-        },
+        onProgress: (msg) => log(LoggingLevel.info, msg),
       );
 
       if (!result.success) {
@@ -371,7 +453,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
   Future<CallToolResult> _handleIndexDeps(CallToolRequest request) async {
     final projectHint = request.arguments?['projectRoot'] as String?;
 
-    // Resolve project path
     String projectPath;
     if (projectHint != null) {
       projectPath = projectHint;
@@ -386,7 +467,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
       projectPath = Uri.parse(currentRoots.first.uri).toFilePath();
     }
 
-    // Check for pubspec.lock
     final lockfile = File('$projectPath/pubspec.lock');
     if (!await lockfile.exists()) {
       return CallToolResult(
@@ -402,7 +482,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
     log(LoggingLevel.info, 'Indexing dependencies from $projectPath...');
 
-    // Create a temporary registry for building
     final registry = PackageRegistry(rootPath: projectPath);
     final builder = ExternalIndexBuilder(registry: registry);
 
@@ -452,7 +531,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     final projectHint = request.arguments?['projectRoot'] as String?;
     final fullReindex = request.arguments?['fullReindex'] as bool? ?? false;
 
-    // Find the root to refresh
     final currentRoots = await roots;
     Root? targetRoot;
 
@@ -477,7 +555,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
     final rootPath = Uri.parse(targetRoot.uri).toFilePath();
 
-    // Dispose existing context and clear stale flag
     final existingContext = _contexts.remove(targetRoot.uri);
     if (existingContext != null) {
       await existingContext.dispose();
@@ -485,7 +562,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     }
     _staleRoots.remove(targetRoot.uri);
 
-    // Create fresh context
     try {
       log(LoggingLevel.info, 'Refreshing CodeContext for: $rootPath');
       if (fullReindex) {
@@ -493,7 +569,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
       }
       log(LoggingLevel.info, 'Analyzing project files...');
 
-      // Use DartBinding explicitly for Dart projects
       final context = await CodeContext.open(
         rootPath,
         binding: DartBinding(),
@@ -505,7 +580,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
 
       log(LoggingLevel.info, 'Loading dependencies...');
 
-      // Re-establish package_config watcher
       _watchPackageConfig(targetRoot.uri, rootPath);
 
       final refreshRegistry = _getRegistry(context);
@@ -543,7 +617,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
   Future<CallToolResult> _handleStatus(CallToolRequest request) async {
     final projectHint = request.arguments?['projectRoot'] as String?;
 
-    // Find the context
     CodeContext? context;
     String? rootPath;
 
@@ -568,17 +641,15 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
       output.writeln('Project: ${rootPath ?? "(none)"}');
       output.writeln('Status: Not indexed');
       output.writeln('');
-      output.writeln(
-        'Use dart_query to trigger indexing, or dart_refresh to reload.',
-      );
+      output.writeln('Use dart_sql to trigger indexing, or dart_refresh to reload.');
     } else {
       output.writeln('Project: ${context.rootPath}');
       output.writeln('Files: ${context.stats['files']}');
       output.writeln('Symbols: ${context.stats['symbols']}');
-      output.writeln('References: ${context.stats['references'] ?? 0}');
+      output.writeln('Occurrences: ${context.stats['occurrences'] ?? 0}');
+      output.writeln('Relationships: ${context.stats['relationships'] ?? 0}');
       output.writeln('');
 
-      // Show discovered packages (Dart-specific)
       final registry = _getRegistry(context);
       if (registry != null) {
         final localPkgs = registry.localPackages.keys.toList();
@@ -595,7 +666,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
         }
       }
 
-      // Show external indexes
       if (context.hasDependencies && registry != null) {
         output.writeln('### External Indexes');
         output.writeln('');
@@ -608,7 +678,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
           );
         }
 
-        // Show hosted packages
         output.writeln('Hosted packages: ${registry.hostedPackages.length}');
         if (registry.hostedPackages.isNotEmpty) {
           final pkgNames = registry.hostedPackages.keys.take(5).toList();
@@ -616,13 +685,10 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
             output.writeln('  - $name');
           }
           if (registry.hostedPackages.length > 5) {
-            output.writeln(
-              '  ... and ${registry.hostedPackages.length - 5} more',
-            );
+            output.writeln('  ... and ${registry.hostedPackages.length - 5} more');
           }
         }
 
-        // Show git packages
         if (registry.gitPackages.isNotEmpty) {
           output.writeln('Git packages: ${registry.gitPackages.length}');
           final gitNames = registry.gitPackages.keys.take(5).toList();
@@ -631,7 +697,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
           }
         }
 
-        // Show local (workspace) packages
         if (registry.localIndexes.isNotEmpty) {
           output.writeln('Local packages: ${registry.localIndexes.length}');
           final localNames = registry.localIndexes.keys.take(5).toList();
@@ -647,7 +712,7 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
       }
     }
 
-    // Also show available indexes on disk
+    // Show available indexes on disk
     final tempRegistry = PackageRegistry(rootPath: '.');
     final builder = ExternalIndexBuilder(registry: tempRegistry);
 
@@ -667,7 +732,6 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     );
     output.writeln('Package indexes: ${packages.length}');
 
-    // Check for Flutter project and give hints
     if (rootPath != null) {
       final pubspecFile = File('$rootPath/pubspec.yaml');
       if (await pubspecFile.exists()) {
@@ -679,19 +743,17 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
         output.writeln('### Recommendations');
         output.writeln('');
 
-        // Check if Flutter indexes are missing for Flutter project
         final hasFlutterIndexes = flutterVersions.isNotEmpty;
         if (isFlutter && !hasFlutterIndexes) {
           output.writeln(
-            '⚠️ Flutter project detected but Flutter SDK not indexed.',
+            '- Flutter project detected but Flutter SDK not indexed.',
           );
           output.writeln(
-            '   Run: `dart_index_flutter` to enable widget hierarchy queries.',
+            '  Run: `dart_index_flutter` to enable widget hierarchy queries.',
           );
           output.writeln('');
         }
 
-        // Check for missing pub dependencies
         final lockFile = File('$rootPath/pubspec.lock');
         if (await lockFile.exists()) {
           final lockContent = await lockFile.readAsString();
@@ -700,37 +762,34 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
               deps.where((d) => !packageSet.contains(d.name)).toList();
 
           if (missingDeps.isNotEmpty) {
-            output
-                .writeln('📦 ${missingDeps.length} dependencies not indexed:');
+            output.writeln('- ${missingDeps.length} dependencies not indexed:');
             final toShow = missingDeps.take(5).map((d) => d.name).toList();
             output.writeln(
-              '   ${toShow.join(", ")}${missingDeps.length > 5 ? " ..." : ""}',
+              '  ${toShow.join(", ")}${missingDeps.length > 5 ? " ..." : ""}',
             );
             output.writeln(
-              '   Run: `dart_index_deps` to index all dependencies.',
+              '  Run: `dart_index_deps` to index all dependencies.',
             );
             output.writeln('');
           } else if (deps.isNotEmpty) {
-            output.writeln('✓ All ${deps.length} dependencies are indexed.');
+            output.writeln('- All ${deps.length} dependencies are indexed.');
           }
         } else {
-          output.writeln('ℹ️ No pubspec.lock found. Run `dart pub get` first.');
+          output.writeln('- No pubspec.lock found. Run `dart pub get` first.');
         }
 
         if (!isFlutter && sdkVersions.isEmpty) {
-          output
-              .writeln('ℹ️ Dart SDK not indexed. SDK symbols won\'t resolve.');
+          output.writeln('- Dart SDK not indexed. SDK symbols won\'t resolve.');
         }
 
-        // Check if SDK version has changed since indexing
         if (sdkVersions.isNotEmpty) {
           final currentSdkVersion = _getCurrentSdkVersion();
           if (currentSdkVersion != null &&
               !sdkVersions.contains(currentSdkVersion)) {
             output.writeln(
-              '⚠️ Current SDK ($currentSdkVersion) differs from indexed: ${sdkVersions.join(", ")}',
+              '- Current SDK ($currentSdkVersion) differs from indexed: ${sdkVersions.join(", ")}',
             );
-            output.writeln('   Consider re-indexing for accurate results.');
+            output.writeln('  Consider re-indexing for accurate results.');
           }
         }
       }
@@ -742,112 +801,96 @@ base mixin CodeContextSupport on ToolsSupport, RootsTrackingSupport {
     );
   }
 
-  /// The dart_query tool definition.
-  static final dartQueryTool = Tool(
-    name: 'dart_query',
-    description:
-        '''Query Dart codebase for semantic information using a simple DSL.
+  /// The dart_sql tool definition.
+  static final dartSqlTool = Tool(
+    name: 'dart_sql',
+    description: '''Execute SQL queries against the Dart code index.
 
-## Query Commands
+## Schema
 
-| Query | Description | Example |
-|-------|-------------|---------|
-| `def <symbol>` | Find definition | `def AuthRepository` |
-| `refs <symbol>` | Find all references | `refs login` |
-| `sig <symbol>` | Get signature (no body) | `sig UserService` |
-| `members <symbol>` | Get class members | `members UserService` |
-| `impls <symbol>` | Find implementations | `impls Repository` |
-| `hierarchy <symbol>` | Type hierarchy | `hierarchy MyWidget` |
-| `source <symbol>` | Full source code | `source handleLogin` |
-| `find <pattern>` | Search symbols | `find Auth*` |
-| `which <symbol>` | Disambiguate matches | `which login` |
-| `grep <pattern>` | Search in source | `grep /TODO|FIXME/` |
-| `calls <symbol>` | What does it call? | `calls AuthService.login` |
-| `callers <symbol>` | What calls it? | `callers validateUser` |
-| `imports <file>` | File imports | `imports lib/auth.dart` |
-| `exports <path>` | Directory exports | `exports lib/` |
-| `deps <symbol>` | Dependencies | `deps AuthService` |
-| `symbols <file>` | Symbols in file | `symbols lib/auth.dart` |
-| `get <scip-id>` | Lookup by SCIP ID | `get "scip-dart..."` |
-| `files` | List indexed files | `files` |
-| `stats` | Index statistics | `stats` |
+Three tables are available:
+- `symbols` - Symbol definitions (classes, methods, functions, fields, etc.)
+- `occurrences` - Where symbols are defined and referenced
+- `relationships` - Type hierarchy and call graph edges
 
-## Pattern Syntax
+### symbols columns
+scip_id, name, kind, file, line, column_num, package, version, container_id, display_name, documentation, language
 
-| Pattern | Type | Example |
-|---------|------|---------|
-| `Auth*` | Glob | Wildcard matching |
-| `/TODO|FIXME/` | Regex | Regular expression |
-| `/error/i` | Regex | Case-insensitive |
-| `~authentcate` | Fuzzy | Typo-tolerant |
-| `Class.method` | Qualified | Disambiguate |
+### occurrences columns
+id, symbol_id, file, line, column_num, end_line, end_column, is_definition, enclosing_end_line
 
-## Filters
+### relationships columns
+from_symbol, to_symbol, kind (implements, calls, type_definition, references)
 
-| Filter | Description | Example |
-|--------|-------------|---------|
-| `kind:<type>` | Symbol kind | `find * kind:class` |
-| `in:<path>` | File path | `find * in:lib/auth/` |
+## Example Queries
 
-## Grep Flags
+```sql
+-- Find all classes
+SELECT name, file, line FROM symbols WHERE kind = 'class';
 
-| Flag | Description | Example |
-|------|-------------|---------|
-| `-i` | Case insensitive | `grep error -i` |
-| `-v` | Invert match (non-matching) | `grep TODO -v` |
-| `-w` | Word boundary | `grep test -w` |
-| `-l` | Files with matches | `grep TODO -l` |
-| `-L` | Files without matches | `grep TODO -L` |
-| `-c` | Count per file | `grep error -c` |
-| `-o` | Only matching text | `grep /\\w+Error/ -o` |
-| `-F` | Fixed strings (literal) | `grep -F '\$variable'` |
-| `-M` | Multiline matching | `grep /class.*\\{/ -M` |
-| `-D` | Search external dependencies | `grep StatelessWidget -D` |
-| `-C:n` | Context lines | `grep TODO -C:3` |
-| `-A:n` | Lines after | `grep error -A:5` |
-| `-B:n` | Lines before | `grep error -B:2` |
-| `-m:n` | Max matches | `grep TODO -m:10` |
-| `--include:glob` | Only matching files | `grep error --include:*.dart` |
-| `--exclude:glob` | Skip matching files | `grep TODO --exclude:test/*` |
+-- Find symbol definition
+SELECT s.name, o.file, o.line 
+FROM symbols s 
+JOIN occurrences o ON s.scip_id = o.symbol_id 
+WHERE s.name = 'MyClass' AND o.is_definition = 1;
 
-Kinds: class, method, function, field, enum, mixin, extension, getter, setter, constructor
+-- Find all references
+SELECT o.file, o.line 
+FROM occurrences o 
+JOIN symbols s ON o.symbol_id = s.scip_id 
+WHERE s.name = 'login' AND o.is_definition = 0;
 
-## Pipe Queries
+-- Get class members
+SELECT * FROM symbols 
+WHERE container_id = (SELECT scip_id FROM symbols WHERE name = 'MyClass' LIMIT 1);
 
-Chain queries with `|` to process results:
-- `find Auth* kind:class | members` - Get members of all Auth classes
-- `find *Service | refs` - Find refs for all services
-- `grep TODO | refs` - Find refs for symbols containing TODOs
+-- Find callers
+SELECT s.name, s.file 
+FROM relationships r 
+JOIN symbols s ON r.from_symbol = s.scip_id 
+WHERE r.to_symbol IN (SELECT scip_id FROM symbols WHERE name = 'login')
+  AND r.kind = 'calls';
 
-## Examples
-
-```
-def AuthRepository              # Definition with source
-refs AuthService.login          # References to specific method
-sig UserService                 # Class signature (methods as {})
-find ~authentcate               # Fuzzy search (finds "authenticate")
-grep /throw.*Exception/         # Find exception throws
-which login                     # Show all "login" matches
-find Auth* kind:class | members # Pipe: classes → their members
+-- Pattern matching
+SELECT name, kind FROM symbols WHERE name GLOB '*Service*';
 ```
 
-Semantic code navigation - understands definitions, references, types, call graphs, and relationships.''',
+Kinds: class, method, function, field, enum, mixin, extension, getter, setter, constructor, parameter, variable
+''',
     annotations: ToolAnnotations(
-      title: 'Dart Code Query',
+      title: 'Dart SQL Query',
       readOnlyHint: true,
     ),
     inputSchema: Schema.object(
       properties: {
-        'query': Schema.string(
-          description:
-              'The query in DSL format. Examples: "def AuthRepository", "refs login", "find Auth* kind:class"',
+        'sql': Schema.string(
+          description: 'SQL query to execute. Only SELECT queries are allowed.',
+        ),
+        'format': Schema.string(
+          description: 'Output format: "text" (default, markdown table) or "json"',
         ),
         'project': Schema.string(
-          description:
-              'Optional path hint to select which project root to query (if multiple roots are configured).',
+          description: 'Optional path hint to select which project root to query.',
         ),
       },
-      required: ['query'],
+      required: ['sql'],
+    ),
+  );
+
+  /// The dart_schema tool definition.
+  static final dartSchemaTool = Tool(
+    name: 'dart_schema',
+    description: 'Show the SQL schema and example queries for the code index.',
+    annotations: ToolAnnotations(
+      title: 'Show Schema',
+      readOnlyHint: true,
+    ),
+    inputSchema: Schema.object(
+      properties: {
+        'project': Schema.string(
+          description: 'Optional path hint to select project.',
+        ),
+      },
     ),
   );
 
@@ -858,7 +901,7 @@ Semantic code navigation - understands definitions, references, types, call grap
 
 One-time setup that indexes flutter, flutter_test, flutter_driver, flutter_localizations, and flutter_web_plugins.
 
-After indexing, queries like `hierarchy StatefulWidget` and `refs Navigator` will work across your project and Flutter.
+After indexing, SQL queries can search across your project and Flutter SDK.
 
 Takes ~1 minute for a typical Flutter SDK.''',
     annotations: ToolAnnotations(
@@ -917,8 +960,7 @@ Set fullReindex=true to ignore cache and rebuild from scratch.''',
     inputSchema: Schema.object(
       properties: {
         'projectRoot': Schema.string(
-          description:
-              'Path to project. If not provided, uses the first configured root.',
+          description: 'Path to project. If not provided, uses the first configured root.',
         ),
         'fullReindex': Schema.bool(
           description: 'Force full re-index, ignoring cache. Default: false.',
@@ -930,11 +972,10 @@ Set fullReindex=true to ignore cache and rebuild from scratch.''',
   /// Tool to show index status.
   static final dartStatusTool = Tool(
     name: 'dart_status',
-    description:
-        '''Show index status: files, symbols, loaded packages, SDK version.
+    description: '''Show index status: files, symbols, loaded packages, SDK version.
 
 Displays:
-- Project index statistics (files, symbols, references)
+- Project index statistics (files, symbols, occurrences, relationships)
 - Loaded external packages
 - Available pre-computed indexes on disk
 
@@ -946,8 +987,7 @@ Use to verify indexing is complete before querying.''',
     inputSchema: Schema.object(
       properties: {
         'projectRoot': Schema.string(
-          description:
-              'Path to project. If not provided, uses the first configured root.',
+          description: 'Path to project. If not provided, uses the first configured root.',
         ),
       },
     ),

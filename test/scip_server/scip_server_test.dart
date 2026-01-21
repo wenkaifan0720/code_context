@@ -66,11 +66,11 @@ void main() {
       expect(server.availableLanguages, contains('dart'));
     });
 
-    test('handleRequest returns error for uninitialized query', () async {
+    test('handleRequest returns error for uninitialized sql query', () async {
       final request = JsonRpcRequest(
         id: 1,
-        method: ScipMethod.query,
-        params: {'query': 'stats'},
+        method: ScipMethod.sql,
+        params: {'query': 'SELECT COUNT(*) FROM symbols'},
       );
 
       final response = await server.handleRequest(request);
@@ -127,7 +127,7 @@ void main() {
       expect(response.result['fileCount'], greaterThan(0));
     });
 
-    test('query executes DSL after initialize', () async {
+    test('sql query executes after initialize', () async {
       // Initialize
       await server.handleRequest(JsonRpcRequest(
         id: 1,
@@ -138,11 +138,11 @@ void main() {
         },
       ));
 
-      // Query for class
+      // SQL query for symbols
       final response = await server.handleRequest(JsonRpcRequest(
         id: 2,
-        method: ScipMethod.query,
-        params: {'query': 'def ExampleService'},
+        method: ScipMethod.sql,
+        params: {'sql': "SELECT name FROM symbols WHERE name = 'ExampleService'"},
       ));
 
       expect(response, isNotNull);
@@ -150,7 +150,7 @@ void main() {
       expect(response.result['result'], contains('ExampleService'));
     });
 
-    test('query with json format returns structured data', () async {
+    test('sql query with json format returns structured data', () async {
       // Initialize
       await server.handleRequest(JsonRpcRequest(
         id: 1,
@@ -161,12 +161,12 @@ void main() {
         },
       ));
 
-      // Query with JSON format
+      // SQL query with JSON format
       final response = await server.handleRequest(JsonRpcRequest(
         id: 2,
-        method: ScipMethod.query,
+        method: ScipMethod.sql,
         params: {
-          'query': 'members ExampleService',
+          'sql': 'SELECT name, kind FROM symbols LIMIT 5',
           'format': 'json',
         },
       ));
@@ -200,7 +200,7 @@ void main() {
       expect(server.isInitialized, isFalse);
     });
 
-    test('find returns empty when symbol not found', () async {
+    test('sql query returns empty when symbol not found', () async {
       // Initialize
       await server.handleRequest(JsonRpcRequest(
         id: 1,
@@ -214,14 +214,14 @@ void main() {
       // Search for non-existent symbol
       final response = await server.handleRequest(JsonRpcRequest(
         id: 2,
-        method: ScipMethod.query,
-        params: {'query': 'def NonExistentClass'},
+        method: ScipMethod.sql,
+        params: {'sql': "SELECT name FROM symbols WHERE name = 'NonExistentClass'"},
       ));
 
       expect(response, isNotNull);
       expect(response!.result['success'], isTrue);
-      // Result should be empty or indicate not found
-      expect(response.result['result'], isNotNull);
+      // Result should be empty (0 rows)
+      expect(response.result['result'], contains('(0 rows)'));
     });
 
     test('initialize with unknown language returns error', () async {
