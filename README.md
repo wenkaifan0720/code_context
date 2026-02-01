@@ -1,13 +1,13 @@
 # code_context
 
-Language-agnostic semantic code intelligence. Query your codebase with a simple DSL.
+Language-agnostic semantic code intelligence. Query your codebase with SQL.
 
 ## Features
 
 - **Multi-language support**: Extensible architecture with Dart as the first supported language
 - **Index caching**: Persistent cache for instant startup (~300ms vs ~10s)
 - **Incremental indexing**: Watches files and updates the index automatically
-- **Simple query DSL**: Human and LLM-friendly query language
+- **SQL queries**: Standard SQL for powerful, flexible code queries
 - **Fast lookups**: O(1) symbol lookups via in-memory indexes
 - **SCIP-compatible**: Uses [scip-dart](https://github.com/Workiva/scip-dart) for standard code intelligence format
 
@@ -34,12 +34,17 @@ void main() async {
   CodeContext.registerBinding(DartBinding());
   final context = await CodeContext.open('/path/to/project');
 
-  // Query with DSL
-  final result = await context.query('def AuthRepository');
-  print(result.toText());
+  // Query with SQL
+  final classes = context.sql("SELECT name, file FROM symbols WHERE kind = 'class'");
+  print(classes.toText());
 
   // Find references
-  final refs = await context.query('refs login');
+  final refs = context.sql('''
+    SELECT o.file, o.line 
+    FROM occurrences o 
+    JOIN symbols s ON o.symbol_id = s.scip_id 
+    WHERE s.name = 'login' AND o.is_definition = 0
+  ''');
   print(refs.toText());
 
   // Load external dependencies (SDK, packages)
@@ -48,7 +53,7 @@ void main() async {
   }
 
   // Query across dependencies
-  final sdkResult = await context.query('find String kind:class lang:Dart');
+  final sdkResult = context.sql("SELECT * FROM symbols WHERE name = 'String' AND kind = 'class'");
   print(sdkResult.toText());
 
   await context.dispose();
@@ -58,17 +63,17 @@ void main() async {
 ### CLI Usage
 
 ```bash
-# Find definition
-code_context def AuthRepository
+# Find all classes
+code_context "SELECT name, file FROM symbols WHERE kind = 'class'"
 
-# Find references  
-code_context refs login
+# Pattern matching
+code_context "SELECT name, file FROM symbols WHERE name GLOB 'Auth*'"
 
-# Search with filters
-code_context "find Auth* kind:class"
-
-# Interactive mode
+# Interactive SQL REPL mode
 code_context -i
+
+# Show schema
+code_context schema
 
 # Dart-specific commands (namespaced with dart:)
 code_context dart:index-sdk /path/to/sdk
@@ -77,27 +82,33 @@ code_context dart:index-deps
 code_context dart:list-indexes
 ```
 
-## Query DSL
+## SQL Schema
 
-| Query | Description | Example |
-|-------|-------------|---------|
-| `def <symbol>` | Find definition | `def AuthRepository` |
-| `refs <symbol>` | Find references | `refs login` |
-| `find <pattern>` | Search symbols | `find Auth*` |
-| `grep <pattern>` | Search source | `grep /TODO\|FIXME/` |
-| `members <symbol>` | Class members | `members MyClass` |
-| `hierarchy <symbol>` | Type hierarchy | `hierarchy MyWidget` |
-| `calls <symbol>` | What it calls | `calls login` |
-| `callers <symbol>` | What calls it | `callers validateUser` |
+| Table | Description |
+|-------|-------------|
+| `symbols` | Symbol definitions (classes, methods, fields, etc.) |
+| `occurrences` | Where symbols are defined and referenced |
+| `relationships` | Type hierarchy and call graph edges |
 
-[Full DSL Reference →](doc/query-dsl.md)
+### Common Queries
+
+| Task | SQL |
+|------|-----|
+| Find all classes | `SELECT * FROM symbols WHERE kind = 'class'` |
+| Find symbol | `SELECT * FROM symbols WHERE name = 'MyClass'` |
+| Find references | `SELECT o.* FROM occurrences o JOIN symbols s ON o.symbol_id = s.scip_id WHERE s.name = 'foo' AND o.is_definition = 0` |
+| Class members | `SELECT * FROM symbols WHERE container_id = (SELECT scip_id FROM symbols WHERE name = 'MyClass')` |
+| Pattern match | `SELECT * FROM symbols WHERE name GLOB '*Service*'` |
+| Find callers | `SELECT s.name FROM relationships r JOIN symbols s ON r.from_symbol = s.scip_id WHERE r.to_symbol IN (SELECT scip_id FROM symbols WHERE name = 'foo') AND r.kind = 'calls'` |
+
+[Full SQL Reference →](doc/sql-reference.md)
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
 | [Getting Started](doc/getting-started.md) | Installation and basic usage |
-| [Query DSL](doc/query-dsl.md) | Complete command reference |
+| [SQL Reference](doc/sql-reference.md) | Complete schema and query reference |
 | [Architecture](doc/architecture.md) | How it works, package structure |
 | [SCIP Server](doc/scip-server.md) | JSON-RPC protocol server |
 | [MCP Integration](doc/mcp-integration.md) | Using with Cursor/AI agents |
@@ -112,7 +123,7 @@ code_context dart:list-indexes
 | Initial indexing | ~10-15s for 85 files |
 | Cached startup | ~300ms (35x faster) |
 | Incremental update | ~100-200ms per file |
-| Query execution | <10ms |
+| SQL query execution | <10ms |
 
 ## Architecture
 
@@ -121,9 +132,15 @@ code_context dart:list-indexes
 │                           CodeContext                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐│
-│  │ LLM / Agent  │────▶│ Query String │────▶│    QueryExecutor         ││
+│  │ LLM / Agent  │────▶│  SQL Query   │────▶│      SqlExecutor         ││
 │  └──────────────┘     └──────────────┘     └────────────┬─────────────┘│
 │                                                         ▼              │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                      SqlIndex (SQLite)                           │  │
+│  │  Tables: symbols, occurrences, relationships                     │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                    ▲                                   │
+│                                    │ (loads from)                      │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                     LanguageBinding                              │  │
 │  │  Dart (DartBinding) | TypeScript (future) | Python (future)     │  │
@@ -132,7 +149,7 @@ code_context dart:list-indexes
 │              ▼                   ▼                   ▼                 │
 │  ┌───────────────────┐  ┌───────────────┐  ┌────────────────────────┐ │
 │  │ LocalPackageIndex │  │ ScipIndex     │  │ ExternalPackageIndex   │ │
-│  │ + Indexer (live)  │  │ O(1) lookups  │  │ SDK/Flutter/pub        │ │
+│  │ + Indexer (live)  │  │ (in-memory)   │  │ SDK/Flutter/pub        │ │
 │  └───────────────────┘  └───────────────┘  └────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

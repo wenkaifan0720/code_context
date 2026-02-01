@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-02-XX
+
+### Changed
+
+#### SQL-Only Architecture
+- **Replaced custom DSL with SQL queries** - All code queries now use standard SQL against an SQLite database
+- **New SQL schema** with three tables:
+  - `symbols` - Symbol definitions (classes, methods, functions, fields, etc.)
+  - `occurrences` - Where symbols are defined and referenced
+  - `relationships` - Type hierarchy and call graph edges
+- **MCP tools updated**:
+  - `dart_query` → `dart_sql` - Execute SQL queries
+  - Added `dart_schema` - Show SQL schema and example queries
+- **JSON-RPC protocol updated**:
+  - `query` method → `sql` method
+  - Added `schema` method
+
+#### API Changes
+- `CodeContext.query()` removed, use `CodeContext.sql()` instead
+- `QueryExecutor`, `QueryParser`, `QueryResult` classes removed
+- `SqlIndex`, `SqlExecutor`, `ScipToSql` classes added
+- CLI now accepts SQL queries instead of DSL commands
+
+### Removed
+- All DSL commands (`def`, `refs`, `find`, `grep`, `members`, `hierarchy`, `calls`, `callers`, etc.)
+- `query-dsl.md` documentation (replaced with `sql-reference.md`)
+- `IndexProvider` class
+- `PackageRegistryProvider` class
+
+### Added
+- `SqlIndex` - SQLite database wrapper for code index
+- `SqlExecutor` - Executes SQL queries with result formatting
+- `ScipToSql` - Converts SCIP data to SQL tables
+- `sql-reference.md` - Complete SQL schema and query documentation
+- Interactive SQL REPL mode (`code_context -i`)
+- `schema` subcommand to show SQL schema
+
+---
+
 ## [0.2.0] - 2025-01-XX
 
 ### Changed

@@ -51,7 +51,13 @@ CodeContext.registerBinding(DartBinding());
 final context = await CodeContext.open('/path/to/monorepo');
 
 // Cross-package queries work seamlessly
-final result = await context.query('refs SharedUtils'); // Finds refs in other packages
+final result = context.sql('''
+  SELECT o.file, o.line 
+  FROM occurrences o 
+  JOIN symbols s ON o.symbol_id = s.scip_id 
+  WHERE s.name = 'SharedUtils' AND o.is_definition = 0
+''');
+print(result.toText()); // Finds refs in all packages
 
 // Find which package owns a file
 final pkg = context.findPackageForPath('/path/to/monorepo/packages/my_app/lib/main.dart');
@@ -81,7 +87,8 @@ my_monorepo/
 code_context -p /path/to/my_monorepo
 
 # Query across all packages
-code_context refs CoreService    # Finds refs in core, api, and app
+code_context "SELECT o.file, o.line FROM occurrences o JOIN symbols s ON o.symbol_id = s.scip_id WHERE s.name = 'CoreService' AND o.is_definition = 0"
+# Finds refs in core, api, and app
 ```
 
 ## Example: Pub Workspace
@@ -102,6 +109,5 @@ workspace:
 code_context -p /path/to/my_workspace
 
 # All workspace packages are indexed
-code_context stats
+code_context "SELECT kind, COUNT(*) as count FROM symbols GROUP BY kind"
 ```
-

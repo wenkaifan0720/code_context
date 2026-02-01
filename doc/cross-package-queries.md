@@ -22,13 +22,13 @@ code_context dart:list-indexes
 
 ```bash
 # Query with dependencies loaded
-code_context --with-deps "hierarchy MyWidget"
+code_context --with-deps "SELECT * FROM symbols WHERE name = 'StatelessWidget'"
 
-# Search dependencies with grep -D flag
-code_context --with-deps "grep Navigator -D -l"
+# Find Flutter widget hierarchy
+code_context --with-deps "SELECT s.name FROM relationships r JOIN symbols s ON r.to_symbol = s.scip_id WHERE r.from_symbol IN (SELECT scip_id FROM symbols WHERE name = 'MyWidget') AND r.kind = 'implements'"
 
-# Filter by language (useful for SDK queries)
-code_context --with-deps "find String kind:class lang:Dart"
+# Search in SDK types
+code_context --with-deps "SELECT name, kind FROM symbols WHERE name GLOB 'List*' AND kind = 'class'"
 ```
 
 ## Global Cache Structure
@@ -53,24 +53,20 @@ Indexes are stored in `~/.dart_context/` with a structure that mirrors pub cache
 With pre-computed indexes, you can:
 
 ```bash
-# See widget hierarchy
-code_context --with-deps "hierarchy SignatureVisitor"
+# Find type hierarchy
+code_context --with-deps "SELECT s.name FROM relationships r JOIN symbols s ON r.to_symbol = s.scip_id WHERE r.from_symbol IN (SELECT scip_id FROM symbols WHERE name = 'SignatureVisitor') AND r.kind = 'implements'"
 # Output: Shows that it extends RecursiveAstVisitor from analyzer
 
-# Get full Flutter supertypes
-code_context --with-deps "supertypes MyWidget"
-# Output: Full hierarchy including StatelessWidget, Widget, etc.
+# Find all implementers of an interface
+code_context --with-deps "SELECT s.name, s.file FROM relationships r JOIN symbols s ON r.from_symbol = s.scip_id WHERE r.to_symbol IN (SELECT scip_id FROM symbols WHERE name = 'StatefulWidget') AND r.kind = 'implements'"
+# Output: All classes implementing StatefulWidget
 
-# Find all uses of a Flutter class
-code_context --with-deps "refs StatefulWidget"
-# Output: All files using StatefulWidget
+# Find uses of a Flutter class
+code_context --with-deps "SELECT o.file, o.line FROM occurrences o JOIN symbols s ON o.symbol_id = s.scip_id WHERE s.name = 'StatefulWidget' AND o.is_definition = 0"
+# Output: All files referencing StatefulWidget
 
-# Search in dependencies
-code_context --with-deps "grep /build.*Widget/ -D"
-# Output: Matches in Flutter source code
-
-# Find SDK types with language filter
-code_context --with-deps "find int kind:class lang:Dart"
+# Search SDK types with pattern
+code_context --with-deps "SELECT name, kind FROM symbols WHERE name GLOB 'int*' AND kind = 'class'"
 ```
 
 ## Loading Dependencies Programmatically
@@ -89,7 +85,14 @@ print('Skipped ${result.skipped} (already cached)');
 print('Failed: ${result.failed}');
 
 // Now queries include dependencies
-final hierarchy = await context.query('hierarchy MyWidget');
+final hierarchy = context.sql('''
+  SELECT s.name 
+  FROM relationships r 
+  JOIN symbols s ON r.to_symbol = s.scip_id 
+  WHERE r.from_symbol IN (SELECT scip_id FROM symbols WHERE name = 'MyWidget')
+    AND r.kind = 'implements'
+''');
+print(hierarchy.toText());
 ```
 
 ## Performance Considerations

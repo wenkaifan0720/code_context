@@ -8,11 +8,14 @@ import 'analyzer_adapter.dart';
 ///
 /// Usage in hologram_server:
 /// ```dart
-/// import 'package:dart_context/dart_context.dart';
+/// import 'package:code_context/code_context.dart';
+/// import 'package:scip_server/scip_server.dart';
 ///
 /// // In AnalyzerService or wherever you have access to HologramAnalyzer
 /// class DartContextService extends FluxonService {
 ///   late final IncrementalScipIndexer _indexer;
+///   late SqlIndex _sqlIndex;
+///   late SqlExecutor _sqlExecutor;
 ///
 ///   @override
 ///   Future<void> initialize() async {
@@ -38,12 +41,16 @@ import 'analyzer_adapter.dart';
 ///       packageConfig: _packageConfig,
 ///       pubspec: _pubspec,
 ///     );
+///
+///     // Build SQL index
+///     _sqlIndex = SqlIndex.inMemory();
+///     ScipToSql(_sqlIndex).loadFromScipIndex(_indexer.index);
+///     _sqlExecutor = SqlExecutor(_sqlIndex);
 ///   }
 ///
-///   // Query method
-///   Future<String> query(String dsl) async {
-///     final executor = QueryExecutor(_indexer.index);
-///     final result = await executor.execute(dsl);
+///   // Query method - uses SQL
+///   Future<String> sql(String query) async {
+///     final result = _sqlExecutor.execute(query);
 ///     return result.toText();
 ///   }
 /// }

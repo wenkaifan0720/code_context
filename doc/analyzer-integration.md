@@ -6,6 +6,7 @@ When integrating with an existing analyzer (e.g., HologramAnalyzer), you can avo
 
 ```dart
 import 'package:dart_binding/dart_binding.dart';
+import 'package:scip_server/scip_server.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 
 // Create an adapter that wraps your existing analyzer
@@ -33,9 +34,18 @@ final indexer = await IncrementalScipIndexer.openWithAdapter(
   pubspec: pubspec,
 );
 
-// Query the index
-final executor = QueryExecutor(indexer.index);
-final result = await executor.execute('refs login');
+// Build SQL index from SCIP
+final sqlIndex = SqlIndex.inMemory();
+ScipToSql(sqlIndex).loadFromScipIndex(indexer.index);
+final executor = SqlExecutor(sqlIndex);
+
+// Query with SQL
+final result = executor.execute('''
+  SELECT o.file, o.line 
+  FROM occurrences o 
+  JOIN symbols s ON o.symbol_id = s.scip_id 
+  WHERE s.name = 'login' AND o.is_definition = 0
+''');
 print(result.toText());
 ```
 
@@ -45,6 +55,8 @@ print(result.toText());
 @ServiceContract(remote: true)
 class DartContextService extends FluxonService {
   late final IncrementalScipIndexer _indexer;
+  late final SqlIndex _sqlIndex;
+  late final SqlExecutor _sqlExecutor;
   
   @override
   Future<void> initialize() async {
@@ -61,13 +73,24 @@ class DartContextService extends FluxonService {
       packageConfig: _packageConfig,
       pubspec: _pubspec,
     );
+    
+    // Build SQL index
+    _sqlIndex = SqlIndex.inMemory();
+    ScipToSql(_sqlIndex).loadFromScipIndex(_indexer.index);
+    _sqlExecutor = SqlExecutor(_sqlIndex);
   }
   
   @ServiceMethod()
-  Future<String> query(String dsl) async {
-    final executor = QueryExecutor(_indexer.index);
-    final result = await executor.execute(dsl);
+  Future<String> sql(String query) async {
+    final result = _sqlExecutor.execute(query);
     return result.toText();
+  }
+  
+  void _rebuildSqlIndex() {
+    _sqlIndex.dispose();
+    _sqlIndex = SqlIndex.inMemory();
+    ScipToSql(_sqlIndex).loadFromScipIndex(_indexer.index);
+    _sqlExecutor = SqlExecutor(_sqlIndex);
   }
 }
 ```
@@ -81,6 +104,8 @@ If you already have resolved units, you can update the index directly:
 analyzer.onFileDartAnalysisCompleted = (filePath, result) {
   if (result is ResolvedUnitResult) {
     indexer.indexWithResolvedUnit(filePath, result);
+    // Rebuild SQL index after updates
+    _rebuildSqlIndex();
   }
 };
 ```
@@ -122,3 +147,4 @@ abstract interface class AnalyzerAdapter {
 - **Unified file watching**: Reuse your existing file watcher
 - **Incremental updates**: Index updates automatically when files change
 - **Memory efficient**: Single analyzer instance serves multiple purposes
+- **SQL queries**: Use standard SQL for powerful, flexible code queries

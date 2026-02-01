@@ -2,21 +2,27 @@
 
 ## Overview
 
-code_context provides lightweight semantic code intelligence with multi-language support. It uses SCIP (Semantic Code Intelligence Protocol) for standardized code indexing.
+code_context provides lightweight semantic code intelligence with multi-language support. It uses SCIP (Semantic Code Intelligence Protocol) for standardized code indexing and SQLite for query execution.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           CodeContext                                   │
-│  Entry point: open(), query(), dispose()                                │
+│  Entry point: open(), sql(), dispose()                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐│
-│  │ LLM / Agent  │────▶│ Query String │────▶│    QueryExecutor         ││
-│  │              │     │ "refs login" │     │                          ││
-│  └──────────────┘     └──────────────┘     │  parse() → execute()     ││
+│  │ LLM / Agent  │────▶│  SQL Query   │────▶│     SqlExecutor          ││
+│  │              │     │ SELECT ...   │     │                          ││
+│  └──────────────┘     └──────────────┘     │  execute() → SqlResult   ││
 │                                            └────────────┬─────────────┘│
 │                                                         │              │
 │                                                         ▼              │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                      SqlIndex (SQLite)                           │  │
+│  │  Tables: symbols, occurrences, relationships                     │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                    ▲                                   │
+│                                    │ (loads from)                      │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                     LanguageBinding                              │  │
 │  │  Dart (DartBinding) | TypeScript (future) | Python (future)     │  │
@@ -25,7 +31,7 @@ code_context provides lightweight semantic code intelligence with multi-language
 │              ▼                   ▼                   ▼                 │
 │  ┌───────────────────┐  ┌───────────────┐  ┌────────────────────────┐ │
 │  │ LocalPackageIndex │  │ ScipIndex     │  │ ExternalPackageIndex   │ │
-│  │ + Indexer (live)  │  │ O(1) lookups  │  │ SDK/Flutter/pub (cached)│ │
+│  │ + Indexer (live)  │  │ (in-memory)   │  │ SDK/Flutter/pub (cached)│ │
 │  └───────────────────┘  └───────────────┘  └────────────────────────┘ │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -40,8 +46,8 @@ code_context/
 ├── packages/
 │   ├── scip_server/          # Language-agnostic SCIP protocol core
 │   │   ├── lib/src/
-│   │   │   ├── index/        # ScipIndex, IndexProvider
-│   │   │   ├── query/        # QueryParser, QueryExecutor, QueryResult
+│   │   │   ├── index/        # ScipIndex (in-memory SCIP storage)
+│   │   │   ├── sql/          # SqlIndex, SqlExecutor, ScipToSql
 │   │   │   ├── protocol/     # JSON-RPC protocol layer
 │   │   │   └── language_binding.dart
 │   │   └── pubspec.yaml
@@ -75,10 +81,10 @@ code_context/
 
 | Component | Description |
 |-----------|-------------|
-| `ScipIndex` | In-memory index with O(1) symbol lookups |
-| `QueryParser` | Parses DSL queries into structured commands |
-| `QueryExecutor` | Executes queries against an index |
-| `IndexProvider` | Abstract interface for cross-index operations |
+| `ScipIndex` | In-memory SCIP index with O(1) symbol lookups |
+| `SqlIndex` | SQLite database wrapper for query execution |
+| `SqlExecutor` | Executes SQL queries and formats results |
+| `ScipToSql` | Converts SCIP data to SQL tables |
 | `LanguageBinding` | Interface for language-specific implementations |
 | `LanguageContext` | Abstract runtime context per language |
 
@@ -101,6 +107,7 @@ code_context/
 1. **Register Bindings**: `CodeContext.registerBinding(DartBinding())`
 2. **Auto-Detection**: `CodeContext.open()` detects language from project files
 3. **Create Context**: Binding creates a `LanguageContext` with indexer and registry
+4. **Build SQL Index**: SCIP data is loaded into SQLite for querying
 
 ### Indexing Flow
 
@@ -109,17 +116,18 @@ code_context/
 3. **File Watching**: Uses filesystem events to detect changes
 4. **Incremental Updates**: Only re-analyzes changed files (via SHA-256 hash comparison)
 5. **Cache Persistence**: Saves index to disk after updates for fast subsequent startups
+6. **SQL Rebuild**: SQLite database is rebuilt when SCIP index changes
 
 ### Query Flow
 
-1. **Parse**: DSL string → `ScipQuery` object
-2. **Execute**: Query runs against `ScipIndex` (or `IndexProvider` for cross-package)
-3. **Filter**: Apply kind/path/language filters
-4. **Format**: Results formatted as text or JSON
+1. **Receive SQL**: SQL query string from user/agent
+2. **Validate**: Only SELECT queries allowed (read-only enforcement)
+3. **Execute**: SQLite executes the query
+4. **Format**: Results formatted as Markdown table or JSON
 
 ### Caching
 
-The index is cached in `.dart_context/` within each package:
+The SCIP index is cached in `.dart_context/` within each package:
 
 ```
 your_project/
@@ -142,6 +150,8 @@ Global pre-computed indexes are stored in `~/.dart_context/`:
 └── git/
     └── fluxon-bfef6c5e/index.scip    # Git dependencies
 ```
+
+Note: The SQLite database is built in-memory on startup from these cached SCIP files. This keeps storage minimal while enabling fast SQL queries.
 
 ## Bringing Your Own Analyzer
 
@@ -210,7 +220,7 @@ final ctx = await CodeContext.open('/path/to/ts/project');
 | Initial indexing | ~10-15s for 85 files |
 | Cached startup | ~300ms (35x faster) |
 | Incremental update | ~100-200ms per file |
-| Query execution | <10ms |
+| SQL query execution | <10ms |
 | Cache size | ~2.5MB for 85 files |
 | SDK indexing | ~30s (one-time, cached globally) |
 
@@ -218,7 +228,7 @@ final ctx = await CodeContext.open('/path/to/ts/project');
 
 1. **Lightweight**: Minimal dependencies, fast startup
 2. **Incremental**: Only re-index changed files
-3. **AI-Friendly**: DSL designed for LLM/agent consumption
+3. **SQL-Native**: Standard SQL for powerful, flexible queries
 4. **Extensible**: Language-agnostic core with pluggable bindings
 5. **SCIP-Compatible**: Uses standard SCIP format for interoperability
 6. **Bring Your Own Analyzer**: Integrate with existing IDE analyzers

@@ -24,9 +24,12 @@
 ///   - params: `{ rootPath: string, languageId: "dart", useCache?: boolean }`
 ///   - result: `{ success: boolean, projectName: string, fileCount: int, symbolCount: int }`
 ///
-/// - `query` - Execute a DSL query
-///   - params: `{ query: string, format?: "text" | "json" }`
+/// - `sql` - Execute a SQL query
+///   - params: `{ sql: string, format?: "text" | "json" }`
 ///   - result: `{ success: boolean, result?: any, error?: string }`
+///
+/// - `schema` - Get SQL schema and example queries
+///   - result: `{ success: boolean, result: string }`
 ///
 /// - `status` - Get index status
 ///   - result: `{ initialized: boolean, languageId?: string, fileCount?: int, ... }`
@@ -46,8 +49,8 @@
 /// -> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootPath":"/my/project","languageId":"dart"}}
 /// <- {"jsonrpc":"2.0","id":1,"result":{"success":true,"projectName":"project","fileCount":42,"symbolCount":1234}}
 ///
-/// -> {"jsonrpc":"2.0","id":2,"method":"query","params":{"query":"def AuthService"}}
-/// <- {"jsonrpc":"2.0","id":2,"result":{"success":true,"result":"AuthService [class] ..."}}
+/// -> {"jsonrpc":"2.0","id":2,"method":"sql","params":{"sql":"SELECT * FROM symbols WHERE kind = 'class'"}}
+/// <- {"jsonrpc":"2.0","id":2,"result":{"success":true,"result":"| name | kind | ... |"}}
 ///
 /// -> {"jsonrpc":"2.0","id":3,"method":"shutdown"}
 /// <- {"jsonrpc":"2.0","id":3,"result":{"success":true}}
@@ -81,7 +84,8 @@ Protocol:
   
   Methods:
     initialize     Initialize a project
-    query          Execute a DSL query
+    sql            Execute a SQL query
+    schema         Get SQL schema and examples
     status         Get index status
     shutdown       Graceful shutdown
     file/didChange Notify of file change

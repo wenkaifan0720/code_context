@@ -21,7 +21,8 @@ The server communicates using JSON-RPC 2.0 over newline-delimited JSON.
 | Method | Description |
 |--------|-------------|
 | `initialize` | Initialize a project with language binding |
-| `query` | Execute a DSL query |
+| `sql` | Execute a SQL query |
+| `schema` | Get SQL schema and example queries |
 | `status` | Get index status/statistics |
 | `shutdown` | Graceful shutdown |
 | `file/didChange` | Notify of file modification |
@@ -61,18 +62,18 @@ Initialize a project for indexing.
 }
 ```
 
-### query
+### sql
 
-Execute a DSL query against the indexed project.
+Execute a SQL query against the indexed project.
 
 **Request:**
 ```json
 {
   "jsonrpc": "2.0",
   "id": 2,
-  "method": "query",
+  "method": "sql",
   "params": {
-    "query": "def AuthService",
+    "sql": "SELECT name, file FROM symbols WHERE kind = 'class'",
     "format": "text"
   }
 }
@@ -85,7 +86,7 @@ Execute a DSL query against the indexed project.
   "id": 2,
   "result": {
     "success": true,
-    "result": "AuthService [class] (lib/auth/service.dart:10)"
+    "result": "| name | file |\n|------|------|\n| AuthService | lib/auth/service.dart |"
   }
 }
 ```
@@ -96,10 +97,35 @@ Set `format: "json"` for structured output:
 {
   "jsonrpc": "2.0",
   "id": 2,
-  "method": "query",
+  "method": "sql",
   "params": {
-    "query": "members AuthService",
+    "sql": "SELECT name, kind FROM symbols LIMIT 5",
     "format": "json"
+  }
+}
+```
+
+### schema
+
+Get the SQL schema and example queries.
+
+**Request:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "schema"
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "success": true,
+    "result": "## SQL Schema\n\n### symbols\n| Column | Type | Description |\n..."
   }
 }
 ```
@@ -112,7 +138,7 @@ Get current index status.
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 3,
+  "id": 4,
   "method": "status"
 }
 ```
@@ -121,14 +147,15 @@ Get current index status.
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 3,
+  "id": 4,
   "result": {
     "initialized": true,
     "languageId": "dart",
     "projectName": "my_project",
     "fileCount": 42,
     "symbolCount": 1234,
-    "referenceCount": 5678
+    "occurrences": 5678,
+    "relationships": 890
   }
 }
 ```
@@ -141,7 +168,7 @@ Gracefully shutdown the server.
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 4,
+  "id": 5,
   "method": "shutdown"
 }
 ```
@@ -150,7 +177,7 @@ Gracefully shutdown the server.
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 4,
+  "id": 5,
   "result": {
     "success": true
   }
@@ -201,7 +228,7 @@ Full example:
 
 ```bash
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootPath":"'$(pwd)'","languageId":"dart"}}
-{"jsonrpc":"2.0","id":2,"method":"query","params":{"query":"find *Service kind:class"}}
+{"jsonrpc":"2.0","id":2,"method":"sql","params":{"sql":"SELECT name, kind FROM symbols WHERE kind = '\''class'\'' LIMIT 5"}}
 {"jsonrpc":"2.0","id":3,"method":"status"}
 {"jsonrpc":"2.0","id":4,"method":"shutdown"}' | dart run code_context:scip_server 2>/dev/null
 ```
@@ -270,6 +297,22 @@ Future<void> main() async {
     break;
   }
   
+  // Query
+  process.stdin.writeln(jsonEncode({
+    'jsonrpc': '2.0',
+    'id': 2,
+    'method': 'sql',
+    'params': {
+      'sql': "SELECT name FROM symbols WHERE kind = 'class' LIMIT 5",
+    },
+  }));
+  
+  await for (final line in process.stdout.transform(utf8.decoder).transform(LineSplitter())) {
+    final response = jsonDecode(line);
+    print('Query result: $response');
+    break;
+  }
+  
   process.kill();
 }
 ```
@@ -304,8 +347,8 @@ print(f"Initialized: {response}")
 request = json.dumps({
     'jsonrpc': '2.0',
     'id': 2,
-    'method': 'query',
-    'params': {'query': 'find *Service kind:class'}
+    'method': 'sql',
+    'params': {'sql': "SELECT name, kind FROM symbols WHERE kind = 'class' LIMIT 10"}
 })
 process.stdin.write(request + '\n')
 process.stdin.flush()
@@ -313,4 +356,3 @@ process.stdin.flush()
 response = json.loads(process.stdout.readline())
 print(f"Query result: {response}")
 ```
-

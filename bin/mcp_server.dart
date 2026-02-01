@@ -18,7 +18,8 @@
 /// 
 /// ## Available Tools
 /// 
-/// - `dart_query` - Query Dart codebase with DSL
+/// - `dart_sql` - Execute SQL queries against the code index
+/// - `dart_schema` - Show SQL schema and example queries
 /// - `dart_index_flutter` - Index Flutter SDK packages
 /// - `dart_index_deps` - Index pub dependencies
 /// - `dart_refresh` - Refresh project index
@@ -50,13 +51,12 @@ base class CodeContextServer extends MCPServer
 Use dart_status to check index status.
 Use dart_index_flutter to index Flutter SDK (one-time setup).
 Use dart_index_deps to index project dependencies.
-Use dart_query to query the codebase with DSL.
+Use dart_sql to execute SQL queries against the code index.
 
-Example queries:
-- "def AuthRepository" - Find definition
-- "refs login" - Find references  
-- "hierarchy MyWidget" - Type hierarchy
-- "grep /TODO|FIXME/ -l" - Search source code
+Example SQL queries:
+- "SELECT * FROM symbols WHERE kind = 'class'" - Find all classes
+- "SELECT o.file, o.line FROM occurrences o JOIN symbols s ON o.symbol_id = s.scip_id WHERE s.name = 'login' AND o.is_definition = 0" - Find references
+- "SELECT * FROM symbols WHERE name GLOB '*Widget*'" - Pattern matching
 ''',
         );
 }
